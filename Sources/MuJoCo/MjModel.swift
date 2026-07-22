@@ -39,4 +39,43 @@ public final class MjModel {
         let g = ptr.pointee.opt.gravity
         return (g.0, g.1, g.2)   // mjtNum[3] imports as a Swift tuple
     }
+
+    public enum GeomType: String {
+        case plane, sphere, capsule, ellipsoid, cylinder, box, mesh, other
+    }
+
+    public func geomType(_ i: Int) -> GeomType {
+        switch Int32(ptr.pointee.geom_type[i]) {
+        case Int32(mjGEOM_PLANE.rawValue): return .plane
+        case Int32(mjGEOM_SPHERE.rawValue): return .sphere
+        case Int32(mjGEOM_CAPSULE.rawValue): return .capsule
+        case Int32(mjGEOM_ELLIPSOID.rawValue): return .ellipsoid
+        case Int32(mjGEOM_CYLINDER.rawValue): return .cylinder
+        case Int32(mjGEOM_BOX.rawValue): return .box
+        case Int32(mjGEOM_MESH.rawValue): return .mesh
+        default: return .other
+        }
+    }
+
+    public func geomSize(_ i: Int) -> [Double] {
+        [ptr.pointee.geom_size[i * 3 + 0],
+         ptr.pointee.geom_size[i * 3 + 1],
+         ptr.pointee.geom_size[i * 3 + 2]]
+    }
+
+    public func geomGroup(_ i: Int) -> Int { Int(ptr.pointee.geom_group[i]) }
+    public func geomDataid(_ i: Int) -> Int { Int(ptr.pointee.geom_dataid[i]) }
+
+    public func geomRgba(_ i: Int) -> [Double] {
+        let matid = Int(ptr.pointee.geom_matid[i])
+        let base: UnsafeMutablePointer<Float>
+        let off: Int
+        if matid >= 0 { base = ptr.pointee.mat_rgba; off = matid * 4 }
+        else { base = ptr.pointee.geom_rgba; off = i * 4 }
+        return (0..<4).map { Double(base[off + $0]) }
+    }
+
+    public func geomIsVisible(_ i: Int) -> Bool {
+        geomGroup(i) < 3 && geomRgba(i)[3] != 0.0
+    }
 }
