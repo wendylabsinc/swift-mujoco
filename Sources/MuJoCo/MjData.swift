@@ -28,4 +28,14 @@ public final class MjData {
     public func setCtrl(_ values: [Double]) {
         for i in 0..<min(values.count, model.nu) { ptr.pointee.ctrl[i] = values[i] }
     }
+
+    public func geomXpos(_ i: Int) -> Vec3 {
+        let b = ptr.pointee.geom_xpos!   // mjtNum*, length ngeom*3
+        return Vec3(b[i*3+0], b[i*3+1], b[i*3+2])
+    }
+    public func geomXmat(_ i: Int) -> [Double] {
+        let b = ptr.pointee.geom_xmat!   // mjtNum*, length ngeom*9, row-major
+        return (0..<9).map { b[i*9 + $0] }
+    }
+    public func geomQuat(_ i: Int) -> Quat { mat2Quat(geomXmat(i)) }
 }
