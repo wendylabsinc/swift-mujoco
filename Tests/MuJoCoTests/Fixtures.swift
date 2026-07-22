@@ -6,7 +6,7 @@ enum Fixtures {
     <mujoco>
       <worldbody>
         <body name="pole" pos="0 0 1">
-          <joint name="hinge" type="hinge" axis="0 1 0" range="-3.14 3.14" limited="true"/>
+          <joint name="hinge" type="hinge" axis="0 1 0" range="-179.9 179.9" limited="true"/>
           <geom name="rod" type="capsule" fromto="0 0 0 0 0 -0.5" size="0.02" rgba="0.8 0.2 0.2 1"/>
         </body>
       </worldbody>

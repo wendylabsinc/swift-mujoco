@@ -1,6 +1,14 @@
 import CMuJoCo
 import Foundation
 
+public let objJoint = mjOBJ_JOINT
+public let objActuator = mjOBJ_ACTUATOR
+public let objBody = mjOBJ_BODY
+public let objGeom = mjOBJ_GEOM
+public let objSensor = mjOBJ_SENSOR
+public let objMesh = mjOBJ_MESH
+public let objKey = mjOBJ_KEY
+
 public final class MjModel {
     public let ptr: UnsafeMutablePointer<mjModel>
 
@@ -38,6 +46,82 @@ public final class MjModel {
     public var gravity: (Double, Double, Double) {
         let g = ptr.pointee.opt.gravity
         return (g.0, g.1, g.2)   // mjtNum[3] imports as a Swift tuple
+    }
+
+    public func name(of obj: mjtObj, id: Int) -> String? {
+        guard let c = mj_id2name(ptr, Int32(obj.rawValue), Int32(id)) else { return nil }
+        return String(cString: c)
+    }
+
+    public func id(of obj: mjtObj, name: String) -> Int? {
+        let i = Int(mj_name2id(ptr, Int32(obj.rawValue), name))
+        return i >= 0 ? i : nil
+    }
+
+    public struct JointInfo {
+        public let id: Int
+        public let name: String
+        public let type: Int
+        public let limited: Bool
+        public let range: (Double, Double)
+        public let qposadr: Int
+        public let dofadr: Int
+    }
+
+    public struct ActuatorInfo {
+        public let id: Int
+        public let name: String
+        public let ctrlLimited: Bool
+        public let ctrlRange: (Double, Double)
+    }
+
+    public struct SensorInfo {
+        public let id: Int
+        public let name: String
+        public let type: Int
+        public let dim: Int
+        public let adr: Int
+    }
+
+    public var joints: [JointInfo] {
+        var result: [JointInfo] = []
+        for j in 0..<njnt {
+            let nm = name(of: objJoint, id: j) ?? ""
+            let tp = Int(ptr.pointee.jnt_type[j])
+            let lim = ptr.pointee.jnt_limited[j]
+            let rng = (ptr.pointee.jnt_range[j*2+0], ptr.pointee.jnt_range[j*2+1])
+            let qpa = Int(ptr.pointee.jnt_qposadr[j])
+            let dfa = Int(ptr.pointee.jnt_dofadr[j])
+            result.append(JointInfo(id: j, name: nm, type: tp, limited: lim, range: rng, qposadr: qpa, dofadr: dfa))
+        }
+        return result
+    }
+
+    public var actuators: [ActuatorInfo] {
+        var result: [ActuatorInfo] = []
+        for a in 0..<nu {
+            let nm = name(of: objActuator, id: a) ?? ""
+            let ctl = ptr.pointee.actuator_ctrllimited[a]
+            let rng = (ptr.pointee.actuator_ctrlrange[a*2+0], ptr.pointee.actuator_ctrlrange[a*2+1])
+            result.append(ActuatorInfo(id: a, name: nm, ctrlLimited: ctl, ctrlRange: rng))
+        }
+        return result
+    }
+
+    public var sensors: [SensorInfo] {
+        var result: [SensorInfo] = []
+        for s in 0..<nsensor {
+            let nm = name(of: objSensor, id: s) ?? ""
+            let tp = Int(ptr.pointee.sensor_type[s])
+            let dm = Int(ptr.pointee.sensor_dim[s])
+            let adr = Int(ptr.pointee.sensor_adr[s])
+            result.append(SensorInfo(id: s, name: nm, type: tp, dim: dm, adr: adr))
+        }
+        return result
+    }
+
+    public var bodyNames: [String] {
+        (0..<nbody).map { name(of: objBody, id: $0) ?? "" }
     }
 
     public enum GeomType: String {
@@ -93,12 +177,7 @@ public final class MjModel {
         return (0..<(fn * 3)).map { Int(base[(f0 * 3) + $0]) }
     }
 
-    private func _tmpName(_ obj: mjtObj, _ id: Int) -> String? {
-        guard let c = mj_id2name(ptr, Int32(obj.rawValue), Int32(id)) else { return nil }
-        return String(cString: c)
-    }
-
     public func meshName(_ meshId: Int) -> String {
-        _tmpName(mjOBJ_MESH, meshId) ?? "mesh\(meshId)"
+        name(of: objMesh, id: meshId) ?? "mesh\(meshId)"
     }
 }
