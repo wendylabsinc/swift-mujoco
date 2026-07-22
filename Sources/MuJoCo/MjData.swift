@@ -30,10 +30,12 @@ public final class MjData {
     }
 
     public func geomXpos(_ i: Int) -> Vec3 {
+        precondition(i >= 0 && i < model.ngeom)
         let b = ptr.pointee.geom_xpos!   // mjtNum*, length ngeom*3
         return Vec3(b[i*3+0], b[i*3+1], b[i*3+2])
     }
     public func geomXmat(_ i: Int) -> [Double] {
+        precondition(i >= 0 && i < model.ngeom)
         let b = ptr.pointee.geom_xmat!   // mjtNum*, length ngeom*9, row-major
         return (0..<9).map { b[i*9 + $0] }
     }
