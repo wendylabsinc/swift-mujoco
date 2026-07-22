@@ -14,3 +14,10 @@ import Testing
     #expect(abs(rgba[2] - 0.9) < 1e-6)     // blue channel from the fixture
     #expect(m.geomSize(1).count == 3)
 }
+
+@Test func geomRgbaResolvesMaterialColor() throws {
+    let m = try MjModel.load(xml: Fixtures.materialScene)
+    let i = m.id(of: objGeom, name: "m")!
+    let c = m.geomRgba(i)
+    #expect(abs(c[0] - 0.9) < 1e-6 && abs(c[1] - 0.1) < 1e-6)
+}

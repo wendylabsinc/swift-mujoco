@@ -9,7 +9,15 @@ public let objSensor = mjOBJ_SENSOR
 public let objMesh = mjOBJ_MESH
 public let objKey = mjOBJ_KEY
 
+/// Intentionally NOT `Sendable`: this class wraps mutable MuJoCo C state
+/// (`mjModel`) and must stay on a single isolation domain — stepping and
+/// other MuJoCo APIs mutate shared state that is not safe to touch
+/// concurrently from multiple isolation domains.
 public final class MjModel {
+    /// Deliberate low-level escape hatch for downstream C interop with the
+    /// raw `mjModel`. The library retains ownership of this pointer (it is
+    /// freed in `deinit`); callers must NOT free it or hand it to another
+    /// wrapper that assumes ownership.
     public let ptr: UnsafeMutablePointer<mjModel>
 
     init(owning ptr: UnsafeMutablePointer<mjModel>) { self.ptr = ptr }
@@ -129,6 +137,7 @@ public final class MjModel {
     }
 
     public func geomType(_ i: Int) -> GeomType {
+        precondition(i >= 0 && i < ngeom)
         switch Int32(ptr.pointee.geom_type[i]) {
         case Int32(mjGEOM_PLANE.rawValue): return .plane
         case Int32(mjGEOM_SPHERE.rawValue): return .sphere
@@ -142,15 +151,23 @@ public final class MjModel {
     }
 
     public func geomSize(_ i: Int) -> [Double] {
-        [ptr.pointee.geom_size[i * 3 + 0],
+        precondition(i >= 0 && i < ngeom)
+        return [ptr.pointee.geom_size[i * 3 + 0],
          ptr.pointee.geom_size[i * 3 + 1],
          ptr.pointee.geom_size[i * 3 + 2]]
     }
 
-    public func geomGroup(_ i: Int) -> Int { Int(ptr.pointee.geom_group[i]) }
-    public func geomDataid(_ i: Int) -> Int { Int(ptr.pointee.geom_dataid[i]) }
+    public func geomGroup(_ i: Int) -> Int {
+        precondition(i >= 0 && i < ngeom)
+        return Int(ptr.pointee.geom_group[i])
+    }
+    public func geomDataid(_ i: Int) -> Int {
+        precondition(i >= 0 && i < ngeom)
+        return Int(ptr.pointee.geom_dataid[i])
+    }
 
     public func geomRgba(_ i: Int) -> [Double] {
+        precondition(i >= 0 && i < ngeom)
         let matid = Int(ptr.pointee.geom_matid[i])
         let base: UnsafeMutablePointer<Float>
         let off: Int
@@ -164,6 +181,7 @@ public final class MjModel {
     }
 
     public func meshVertices(_ meshId: Int) -> [Float] {
+        precondition(meshId >= 0 && meshId < nmesh)
         let v0 = Int(ptr.pointee.mesh_vertadr[meshId])
         let vn = Int(ptr.pointee.mesh_vertnum[meshId])
         guard let base = ptr.pointee.mesh_vert else { return [] }
@@ -171,6 +189,7 @@ public final class MjModel {
     }
 
     public func meshFaces(_ meshId: Int) -> [Int] {
+        precondition(meshId >= 0 && meshId < nmesh)
         let f0 = Int(ptr.pointee.mesh_faceadr[meshId])
         let fn = Int(ptr.pointee.mesh_facenum[meshId])
         guard let base = ptr.pointee.mesh_face else { return [] }
@@ -178,6 +197,7 @@ public final class MjModel {
     }
 
     public func meshName(_ meshId: Int) -> String {
-        name(of: objMesh, id: meshId) ?? "mesh\(meshId)"
+        precondition(meshId >= 0 && meshId < nmesh)
+        return name(of: objMesh, id: meshId) ?? "mesh\(meshId)"
     }
 }

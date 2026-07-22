@@ -1,6 +1,14 @@
 import CMuJoCo
 
+/// Intentionally NOT `Sendable`: this class wraps mutable MuJoCo C state
+/// (`mjData`) and must stay on a single isolation domain — stepping and
+/// other MuJoCo APIs mutate shared state that is not safe to touch
+/// concurrently from multiple isolation domains.
 public final class MjData {
+    /// Deliberate low-level escape hatch for downstream C interop with the
+    /// raw `mjData`. The library retains ownership of this pointer (it is
+    /// freed in `deinit`); callers must NOT free it or hand it to another
+    /// wrapper that assumes ownership.
     public let ptr: UnsafeMutablePointer<mjData>
     let model: MjModel   // keep the model alive for this data's lifetime
 
@@ -26,7 +34,8 @@ public final class MjData {
         ptr.pointee.ctrl[index] = value
     }
     public func setCtrl(_ values: [Double]) {
-        for i in 0..<min(values.count, model.nu) { ptr.pointee.ctrl[i] = values[i] }
+        precondition(values.count == model.nu, "setCtrl: expected \(model.nu) values, got \(values.count)")
+        for i in 0..<model.nu { ptr.pointee.ctrl[i] = values[i] }
     }
 
     public func geomXpos(_ i: Int) -> Vec3 {

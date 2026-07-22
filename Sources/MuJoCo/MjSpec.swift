@@ -1,7 +1,16 @@
 import CMuJoCo
 
 /// Procedural scene composition: build a model in code, then compile it to an `MjModel`.
+///
+/// Intentionally NOT `Sendable`: this class wraps mutable MuJoCo C state
+/// (`mjSpec`) and must stay on a single isolation domain — mutating APIs
+/// touch shared state that is not safe to access concurrently from
+/// multiple isolation domains.
 public final class MjSpec {
+    /// Deliberate low-level escape hatch for downstream C interop with the
+    /// raw `mjSpec`. The library retains ownership of this pointer (it is
+    /// freed in `deinit`); callers must NOT free it or hand it to another
+    /// wrapper that assumes ownership.
     public let ptr: UnsafeMutablePointer<mjSpec>
 
     public init(floor: Bool = true, light: Bool = true) {

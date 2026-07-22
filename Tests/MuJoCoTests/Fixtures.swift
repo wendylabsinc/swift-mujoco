@@ -30,6 +30,19 @@ enum Fixtures {
     </mujoco>
     """
 
+    /// A geom whose color comes from a `<material>` asset, not its own rgba —
+    /// used to test the `geom_matid >= 0 -> mat_rgba` resolution branch.
+    static let materialScene = """
+    <mujoco>
+      <asset>
+        <material name="red" rgba="0.9 0.1 0.1 1"/>
+      </asset>
+      <worldbody>
+        <geom name="m" type="box" size="0.1 0.1 0.1" material="red"/>
+      </worldbody>
+    </mujoco>
+    """
+
     /// A mesh from inline vertices (MuJoCo builds the convex hull faces).
     static let meshScene = """
     <mujoco>
