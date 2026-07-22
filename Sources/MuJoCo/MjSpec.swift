@@ -32,6 +32,7 @@ public final class MjSpec {
     public func addGeom(type: MjModel.GeomType, size: [Double], pos: [Double],
                          rgba: [Double], toBody body: String? = nil) {
         let parent = mjs_findBody(ptr, body ?? "world")
+        precondition(parent != nil, "addGeom: no body named \"\(body ?? "world")\" in this spec")
         let g = mjs_addGeom(parent, nil)
         g!.pointee.type = cGeomType(type)
         g!.pointee.size = (size[0], size[1], size[2])
