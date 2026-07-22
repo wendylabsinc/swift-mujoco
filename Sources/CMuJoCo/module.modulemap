@@ -1,0 +1,4 @@
+module CMuJoCo {
+    header "shim.h"
+    export *
+}
