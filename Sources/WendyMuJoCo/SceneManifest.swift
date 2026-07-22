@@ -26,9 +26,10 @@ public func buildScene(_ model: MjModel, title: String) -> SceneManifest {
     var geoms: [Geom] = []
     var meshes: [String: MeshBuf] = [:]
     for i in 0..<model.ngeom where model.geomIsVisible(i) {
-        let kind = model.geomType(i).rawValue
+        let t = model.geomType(i)
+        let kind = t.rawValue
         var meshName: String? = nil
-        if model.geomType(i) == .mesh {
+        if t == .mesh {
             let mid = model.geomDataid(i)
             let name = model.meshName(mid)
             meshName = name
