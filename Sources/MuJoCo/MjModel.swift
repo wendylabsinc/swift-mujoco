@@ -78,4 +78,27 @@ public final class MjModel {
     public func geomIsVisible(_ i: Int) -> Bool {
         geomGroup(i) < 3 && geomRgba(i)[3] != 0.0
     }
+
+    public func meshVertices(_ meshId: Int) -> [Float] {
+        let v0 = Int(ptr.pointee.mesh_vertadr[meshId])
+        let vn = Int(ptr.pointee.mesh_vertnum[meshId])
+        guard let base = ptr.pointee.mesh_vert else { return [] }
+        return (0..<(vn * 3)).map { base[(v0 * 3) + $0] }
+    }
+
+    public func meshFaces(_ meshId: Int) -> [Int] {
+        let f0 = Int(ptr.pointee.mesh_faceadr[meshId])
+        let fn = Int(ptr.pointee.mesh_facenum[meshId])
+        guard let base = ptr.pointee.mesh_face else { return [] }
+        return (0..<(fn * 3)).map { Int(base[(f0 * 3) + $0]) }
+    }
+
+    private func _tmpName(_ obj: mjtObj, _ id: Int) -> String? {
+        guard let c = mj_id2name(ptr, Int32(obj.rawValue), Int32(id)) else { return nil }
+        return String(cString: c)
+    }
+
+    public func meshName(_ meshId: Int) -> String {
+        _tmpName(mjOBJ_MESH, meshId) ?? "mesh\(meshId)"
+    }
 }
