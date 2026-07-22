@@ -10,7 +10,9 @@ public final class MjModel {
     public static func load(xmlPath: String) throws -> MjModel {
         var err = [CChar](repeating: 0, count: 1000)
         let m = mj_loadXML(xmlPath, nil, &err, Int32(err.count))
-        guard let m else { throw MjError(String(cString: err)) }
+        guard let m else {
+            throw MjError(err.withUnsafeBufferPointer { String(cString: $0.baseAddress!) })
+        }
         return MjModel(owning: m)
     }
 
