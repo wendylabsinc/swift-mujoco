@@ -1,4 +1,9 @@
 import CMuJoCo
+#if canImport(Glibc)
+import Glibc
+#else
+import Darwin
+#endif
 
 public struct Vec3: Equatable {
     public var x, y, z: Double
@@ -27,6 +32,12 @@ public struct Mat3 {
              m[1]*v.x + m[4]*v.y + m[7]*v.z,
              m[2]*v.x + m[5]*v.y + m[8]*v.z)
     }
+    /// Multiply this matrix (row-major) by a column vector: `M · v`.
+    public func times(_ v: Vec3) -> Vec3 {
+        Vec3(m[0]*v.x + m[1]*v.y + m[2]*v.z,
+             m[3]*v.x + m[4]*v.y + m[5]*v.z,
+             m[6]*v.x + m[7]*v.y + m[8]*v.z)
+    }
 }
 
 public struct Quat: Equatable {
@@ -48,4 +59,69 @@ public func quat2Mat(_ q: Quat) -> Mat3 {
     var qq = [q.w, q.x, q.y, q.z]
     mju_quat2Mat(&m, &qq)
     return Mat3(m)
+}
+
+extension Quat {
+    /// The no-rotation quaternion.
+    public static var identity: Quat { Quat(w: 1, x: 0, y: 0, z: 0) }
+
+    /// Unit-length version of this quaternion. Returns identity for a zero quat
+    /// rather than producing NaN.
+    public var normalized: Quat {
+        let n = (w*w + x*x + y*y + z*z).squareRoot()
+        guard n > 1e-15 else { return .identity }
+        return Quat(w: w/n, x: x/n, y: y/n, z: z/n)
+    }
+}
+
+/// Hamilton product. `mulQuat(a, b)` is "rotate by b, then by a".
+public func mulQuat(_ a: Quat, _ b: Quat) -> Quat {
+    Quat(w: a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z,
+         x: a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y,
+         y: a.w*b.y - a.x*b.z + a.y*b.w + a.z*b.x,
+         z: a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w)
+}
+
+/// Conjugate, which for a unit quaternion is the inverse rotation.
+public func invQuat(_ q: Quat) -> Quat { Quat(w: q.w, x: -q.x, y: -q.y, z: -q.z) }
+
+/// Negate every component. Represents the *same* rotation as `q`; useful for
+/// picking the sign with a non-negative w when comparing orientations.
+public func negQuat(_ q: Quat) -> Quat { Quat(w: -q.w, x: -q.x, y: -q.y, z: -q.z) }
+
+/// Rotate a vector by a quaternion.
+public func rotVecQuat(_ v: Vec3, _ q: Quat) -> Vec3 {
+    quat2Mat(q).times(v)
+}
+
+/// The rotation taking `b` to `a`, expressed as axis * angle (a rotation vector).
+public func subQuat(_ a: Quat, _ b: Quat) -> Vec3 {
+    var d = mulQuat(a, invQuat(b)).normalized
+    if d.w < 0 { d = negQuat(d) }          // shortest arc
+    let sinHalf = (d.x*d.x + d.y*d.y + d.z*d.z).squareRoot()
+    guard sinHalf > 1e-15 else { return Vec3(0, 0, 0) }
+    let angle = 2 * atan2(sinHalf, d.w)
+    let s = angle / sinHalf
+    return Vec3(d.x * s, d.y * s, d.z * s)
+}
+
+/// Intrinsic Z-Y-X (yaw-pitch-roll) Euler angles from a quaternion, radians.
+public func quat2Euler(_ q: Quat) -> (roll: Double, pitch: Double, yaw: Double) {
+    let n = q.normalized
+    let sinp = 2 * (n.w*n.y - n.z*n.x)
+    let pitch = abs(sinp) >= 1 ? (sinp > 0 ? Double.pi/2 : -Double.pi/2) : asin(sinp)
+    let roll = atan2(2 * (n.w*n.x + n.y*n.z), 1 - 2 * (n.x*n.x + n.y*n.y))
+    let yaw  = atan2(2 * (n.w*n.z + n.x*n.y), 1 - 2 * (n.y*n.y + n.z*n.z))
+    return (roll, pitch, yaw)
+}
+
+/// Quaternion from intrinsic Z-Y-X (yaw-pitch-roll) Euler angles, radians.
+public func euler2Quat(roll: Double, pitch: Double, yaw: Double) -> Quat {
+    let (cr, sr) = (cos(roll/2), sin(roll/2))
+    let (cp, sp) = (cos(pitch/2), sin(pitch/2))
+    let (cy, sy) = (cos(yaw/2), sin(yaw/2))
+    return Quat(w: cr*cp*cy + sr*sp*sy,
+                x: sr*cp*cy - cr*sp*sy,
+                y: cr*sp*cy + sr*cp*sy,
+                z: cr*cp*sy - sr*sp*cy)
 }
