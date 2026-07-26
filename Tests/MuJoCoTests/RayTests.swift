@@ -12,6 +12,18 @@ private let rayScene = """
 </mujoco>
 """
 
+/// A near geom in group 2 (e.g. the robot's own leg) and a far geom in
+/// group 0 (e.g. the environment), on the same ray. Distinguishes group
+/// filtering from plain occlusion: with no mask the near geom always wins.
+private let rayGroupScene = """
+<mujoco>
+  <worldbody>
+    <geom name="near" type="box" pos="1 0 0" size="0.2 0.2 0.2" group="2"/>
+    <geom name="far" type="box" pos="5 0 0" size="0.2 0.2 0.2" group="0"/>
+  </worldbody>
+</mujoco>
+"""
+
 @Test func singleRayHitsAndMisses() throws {
     let m = try MjModel.load(xml: rayScene)
     let d = MjData(m)
@@ -111,4 +123,36 @@ private let rayScene = """
     #expect(abs(p.directions[2].x + 1) < 1e-9)
     #expect(abs(p.directions[3].y + 1) < 1e-9)
     #expect(p.directions.allSatisfy { abs($0.z) < 1e-12 })
+}
+
+@Test func geomGroupMaskSelectsGroupByBitIndex() throws {
+    let m = try MjModel.load(xml: rayGroupScene)
+    let d = MjData(m)
+    mjForward(m, d)
+
+    let nearId = m.id(of: objGeom, name: "near")
+    let farId = m.id(of: objGeom, name: "far")
+    let origin = Vec3(0, 0, 0)
+    let direction = Vec3(1, 0, 0)
+    let batch = MjRayBatch(capacity: 1)
+
+    // Bit 0 (mask 0b0000_0001) selects group 0 only: the near geom (group 2)
+    // is invisible to the ray, so it passes through to the far geom.
+    let group0Only = batch.cast(model: m, data: d, origin: origin, directions: [direction],
+                                geomGroupMask: 0b0000_0001)
+    #expect(group0Only[0]?.geomId == farId)
+    #expect(abs((group0Only[0]?.distance ?? -1) - 4.8) < 1e-6)
+
+    // Bit 2 (mask 0b0000_0100) selects group 2 only: the far geom (group 0)
+    // is invisible, so the ray hits the near geom instead. This pins the
+    // bit-to-index mapping — an off-by-one would select group 1 or 3 and
+    // hit neither geom.
+    let group2Only = batch.cast(model: m, data: d, origin: origin, directions: [direction],
+                                geomGroupMask: 0b0000_0100)
+    #expect(group2Only[0]?.geomId == nearId)
+    #expect(abs((group2Only[0]?.distance ?? -1) - 0.8) < 1e-6)
+
+    // No mask: the near geom occludes the far one, as ordinary raycasting.
+    let noMask = batch.cast(model: m, data: d, origin: origin, directions: [direction])
+    #expect(noMask[0]?.geomId == nearId)
 }

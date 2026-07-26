@@ -38,6 +38,11 @@ extension MjData {
 /// Expand a group bitmask into MuJoCo's `mjtByte[mjNGROUP]` form for the
 /// duration of `body`. Passing nil yields a null pointer, which MuJoCo reads
 /// as "all groups".
+///
+/// Allocates a fresh buffer per call — fine for `MjData.ray(from:)`'s
+/// single-shot use, which makes no allocation-free promise. `MjRayBatch`
+/// does not use this; it has its own cached `groupBuffer` (see
+/// `withGroupBuffer`) since it is documented as allocating nothing per tick.
 private func withGeomGroup<R>(_ mask: UInt8?, _ body: (UnsafePointer<mjtByte>?) -> R) -> R {
     guard let mask else { return body(nil) }
     var groups = [mjtByte](repeating: 0, count: Int(mjNGROUP))
@@ -58,6 +63,15 @@ public final class MjRayBatch {
     private var geomIds: [Int32]
     private var distances: [Double]
     private var flatDirections: [Double]
+    /// Reused origin buffer for `mj_multiRay`'s `pnt` argument — avoids a
+    /// fresh `[Double]` literal on every call, same reasoning as `flatDirections`.
+    private var pntBuffer: [Double]
+    /// Reused `mjtByte[mjNGROUP]` buffer for the group mask. Populated in
+    /// place from `geomGroupMask` on each call instead of allocating a fresh
+    /// array — `MjRayBatch` is documented as allocation-free per tick, and
+    /// `geomGroupMask` is the expected way callers avoid self-hits (see
+    /// `MjRayBatch` doc comment), so this is squarely on the hot path.
+    private var groupBuffer: [mjtByte]
 
     public init(capacity: Int) {
         precondition(capacity > 0, "MjRayBatch capacity must be positive")
@@ -65,6 +79,19 @@ public final class MjRayBatch {
         self.geomIds = [Int32](repeating: -1, count: capacity)
         self.distances = [Double](repeating: -1, count: capacity)
         self.flatDirections = [Double](repeating: 0, count: capacity * 3)
+        self.pntBuffer = [Double](repeating: 0, count: 3)
+        self.groupBuffer = [mjtByte](repeating: 0, count: Int(mjNGROUP))
+    }
+
+    /// Populate `groupBuffer` in place from `mask` and hand a pointer to it
+    /// to `body`; `nil` mask passes a null pointer ("all groups"), matching
+    /// `withGeomGroup`'s semantics but without allocating.
+    private func withGroupBuffer<R>(_ mask: UInt8?, _ body: (UnsafePointer<mjtByte>?) -> R) -> R {
+        guard let mask else { return body(nil) }
+        for i in 0..<groupBuffer.count {
+            groupBuffer[i] = (mask >> UInt8(i)) & 1 == 1 ? 1 : 0
+        }
+        return groupBuffer.withUnsafeBufferPointer { body($0.baseAddress) }
     }
 
     /// Cast `directions.count` rays from a shared origin.
@@ -109,13 +136,15 @@ public final class MjRayBatch {
             flatDirections[i*3+1] = v.y
             flatDirections[i*3+2] = v.z
         }
-        var pnt = [origin.x, origin.y, origin.z]
+        pntBuffer[0] = origin.x
+        pntBuffer[1] = origin.y
+        pntBuffer[2] = origin.z
         // VERIFIED against ~/.local/include/mujoco/mujoco.h:692-694 — the argument
         // order is (…, geomid, dist, normal, nray, cutoff). `normal` sits BETWEEN
         // dist and nray and is nullable; omitting it silently shifts nray/cutoff
         // into the wrong slots and corrupts every result.
-        withGeomGroup(geomGroupMask) { groupPtr in
-            mj_multiRay(model.ptr, data.ptr, &pnt, &flatDirections, groupPtr,
+        withGroupBuffer(geomGroupMask) { groupPtr in
+            mj_multiRay(model.ptr, data.ptr, &pntBuffer, &flatDirections, groupPtr,
                         includeStatic, Int32(bodyExclude),
                         &geomIds, &distances, nil, Int32(n), cutoff)
         }
