@@ -8,6 +8,8 @@ public let objGeom = mjOBJ_GEOM
 public let objSensor = mjOBJ_SENSOR
 public let objMesh = mjOBJ_MESH
 public let objKey = mjOBJ_KEY
+public let objCamera = mjOBJ_CAMERA
+public let objSite = mjOBJ_SITE
 
 /// Intentionally NOT `Sendable`: this class wraps mutable MuJoCo C state
 /// (`mjModel`) and must stay on a single isolation domain — stepping and
