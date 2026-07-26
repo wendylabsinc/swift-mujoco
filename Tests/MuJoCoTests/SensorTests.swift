@@ -22,15 +22,18 @@ import Testing
     #expect(m.nsensordata == m.sensors.reduce(0) { $0 + $1.dim })
 }
 
-@Test func sensorValuesOnStaticBody() throws {
+@Test func sensorValuesOnGravityCompensatedBody() throws {
     let m = try MjModel.load(xml: Fixtures.sensorScene)
     let d = MjData(m)
     mjForward(m, d)   // sensors are computed by mj_sensorPos/Vel/Acc inside mj_forward
 
     #expect(d.sensordata.count == m.nsensordata)
 
-    // Static body: qacc == 0, so the accelerometer reads -gravity in the site
-    // frame. Site is unrotated, so that is +9.81 on z.
+    // `probe` is a free body with gravcomp="1": the gravity-cancelling applied
+    // force leaves qacc == 0 while body_weldid != 0, so the accelerometer
+    // reads +gravity in the site frame instead of the 0 a jointless
+    // (body_weldid == 0) body would give — see the fuller explanation on
+    // Fixtures.sensorScene. Site is unrotated, so that is +9.81 on z.
     let acc = d.sensorValues(try #require(m.sensor(named: "acc")))
     #expect(acc.count == 3)
     #expect(abs(acc[0]) < 1e-6)
