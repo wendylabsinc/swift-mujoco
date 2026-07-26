@@ -58,14 +58,26 @@
 Append to `Tests/MuJoCoTests/Fixtures.swift`:
 
 ```swift
-    /// A static (jointless) body carrying the five sensor kinds a robot plant reads.
-    /// Static means qacc == 0, so the accelerometer reads exactly -gravity in the
-    /// site frame and the gyro reads zero — deterministic assertions with no settling.
+    /// A gravity-compensated free body carrying the five sensor kinds a robot
+    /// plant reads.
+    ///
+    /// The obvious setup — a jointless "static" body — does NOT work, and this was
+    /// verified against MuJoCo 3.10.0 rather than reasoned about: a jointless body
+    /// has `body_weldid == 0`, and `mj_objectAcceleration` short-circuits to an
+    /// all-zero reading for those, so its accelerometer reports [0,0,0], not
+    /// -gravity. A plain `<freejoint/>` also reads [0,0,0], because the body is
+    /// then in free fall. Only `<freejoint/>` plus `gravcomp="1"` gives the
+    /// expected [0, 0, 9.81]: the gravity-cancelling applied force leaves
+    /// qacc == 0 while `body_weldid != 0`. A `<weld>` equality constraint was
+    /// tried and rejected — it is compliant, giving ~8.83 rather than 9.81.
+    ///
+    /// Do not "simplify" this back to a jointless body.
     static let sensorScene = """
     <mujoco>
       <worldbody>
         <geom name="floor" type="plane" size="5 5 0.1"/>
-        <body name="probe" pos="0 0 0.5">
+        <body name="probe" pos="0 0 0.5" gravcomp="1">
+          <freejoint/>
           <geom name="ball" type="sphere" size="0.02"/>
           <site name="imu" type="sphere" size="0.01"/>
           <site name="down" pos="0 0 0" zaxis="0 0 -1" type="sphere" size="0.01"/>
@@ -109,15 +121,18 @@ import Testing
     #expect(m.nsensordata == m.sensors.reduce(0) { $0 + $1.dim })
 }
 
-@Test func sensorValuesOnStaticBody() throws {
+@Test func sensorValuesOnGravityCompensatedBody() throws {
     let m = try MjModel.load(xml: Fixtures.sensorScene)
     let d = MjData(m)
     mjForward(m, d)   // sensors are computed by mj_sensorPos/Vel/Acc inside mj_forward
 
     #expect(d.sensordata.count == m.nsensordata)
 
-    // Static body: qacc == 0, so the accelerometer reads -gravity in the site
-    // frame. Site is unrotated, so that is +9.81 on z.
+    // `probe` is a free body with gravcomp="1": the gravity-cancelling applied
+    // force leaves qacc == 0 while body_weldid != 0, so the accelerometer reads
+    // +gravity in the site frame instead of the 0 a jointless (body_weldid == 0)
+    // body would give — see the fuller explanation on Fixtures.sensorScene.
+    // Site is unrotated, so that is +9.81 on z.
     let acc = d.sensorValues(try #require(m.sensor(named: "acc")))
     #expect(acc.count == 3)
     #expect(abs(acc[0]) < 1e-6)
@@ -307,7 +322,7 @@ public func mjSensorAcc(_ m: MjModel, _ d: MjData) { mj_sensorAcc(m.ptr, d.ptr) 
 swift test --filter SensorTests 2>&1 | tail -20
 ```
 
-Expected: 4 tests pass. If the `accelerometer` z value is not ~9.81, print `d.sensordata` and check the MJCF compiled the body as static (no `<freejoint/>` was added) — a body with a joint free-falls and reads ~0.
+Expected: 4 tests pass. If the `accelerometer` z value is not ~9.81, print `d.sensordata` and check the fixture kept **both** `<freejoint/>` and `gravcomp="1"` on `probe`. Dropping either gives exactly 0: without the freejoint the body is welded to the world (`body_weldid == 0`) and MuJoCo short-circuits the reading; without `gravcomp` the body is in free fall. See the doc comment on `Fixtures.sensorScene`.
 
 - [ ] **Step 5: Run the whole suite to confirm nothing regressed**
 
