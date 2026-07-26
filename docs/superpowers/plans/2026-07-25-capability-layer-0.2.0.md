@@ -778,6 +778,21 @@ git commit -m "feat: quaternion multiply/inverse/rotate and euler conversions"
 
 Both C signatures were read from `~/.local/include/mujoco/mujoco.h:684-694` rather than assumed — see the inline comments in Step 3.
 
+**`cutoff: 0` means "ignore every geom", not "unlimited".** Verified against live MuJoCo
+3.10.0 — with the same scene and ray, `mj_ray` returns 2.5 while `mj_multiRay` with
+`cutoff=0` returns -1 (no hit), and with `cutoff=10` or `cutoff=.infinity` returns 2.5.
+`mj_ray` has no cutoff parameter at all, which is why the two paths disagree. Default both
+`cast` and `withHits` to `.infinity`; a lidar passes its real `range_max`. This default
+fails as "the world is empty" rather than as an error, so it is worth a comment at the
+parameter.
+
+One more type detail, verified against `~/.local/include/mujoco/mjtype.h:40-42`: `mjtBool` is
+`_Bool`/`bool`, so Swift imports the `flg_static` parameter as a Swift **`Bool`**. Pass
+`includeStatic` directly — writing `includeStatic ? 1 : 0` fails to compile with
+"type 'Int' cannot be used as a boolean". The neighbouring `geomgroup` parameter is
+different: it is `const mjtByte*` where `mjtByte` is `unsigned char`, so the `[mjtByte]`
+buffer in `withGeomGroup` is correct.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `Tests/MuJoCoTests/RayTests.swift`:
@@ -942,7 +957,7 @@ extension MjData {
         // a trailing nullable `normal[3]`. Passing nil skips normal computation.
         let dist: Double = withGeomGroup(geomGroupMask) { groupPtr in
             mj_ray(model.ptr, ptr, &pnt, &vec, groupPtr,
-                   includeStatic ? 1 : 0, Int32(bodyExclude), &geomid, nil)
+                   includeStatic, Int32(bodyExclude), &geomid, nil)
         }
         guard dist >= 0, geomid >= 0 else { return nil }
         return RayHit(geomId: Int(geomid), distance: dist)
@@ -989,7 +1004,7 @@ public final class MjRayBatch {
                      geomGroupMask: UInt8? = nil,
                      includeStatic: Bool = true,
                      bodyExclude: Int = -1,
-                     cutoff: Double = 0) -> [RayHit?] {
+                     cutoff: Double = .infinity) -> [RayHit?] {
         withHits(model: model, data: data, origin: origin, directions: directions,
                  geomGroupMask: geomGroupMask, includeStatic: includeStatic,
                  bodyExclude: bodyExclude, cutoff: cutoff) { ids, dists in
@@ -1005,7 +1020,7 @@ public final class MjRayBatch {
                             geomGroupMask: UInt8? = nil,
                             includeStatic: Bool = true,
                             bodyExclude: Int = -1,
-                            cutoff: Double = 0,
+                            cutoff: Double = .infinity,
                             _ body: (UnsafeBufferPointer<Int32>, UnsafeBufferPointer<Double>) -> R) -> R {
         precondition(directions.count <= capacity,
                      "MjRayBatch: \(directions.count) rays exceeds capacity \(capacity)")
@@ -1022,7 +1037,7 @@ public final class MjRayBatch {
         // into the wrong slots and corrupts every result.
         withGeomGroup(geomGroupMask) { groupPtr in
             mj_multiRay(model.ptr, data.ptr, &pnt, &flatDirections, groupPtr,
-                        includeStatic ? 1 : 0, Int32(bodyExclude),
+                        includeStatic, Int32(bodyExclude),
                         &geomIds, &distances, nil, Int32(n), cutoff)
         }
         return geomIds.withUnsafeBufferPointer { ids in
