@@ -11,7 +11,13 @@ let package = Package(
     ],
     targets: [
         .systemLibrary(name: "CMuJoCo", path: "Sources/CMuJoCo", pkgConfig: "mujoco"),
-        .target(name: "MuJoCo", dependencies: ["CMuJoCo"]),
+        .target(
+            name: "CMuJoCoGL",
+            linkerSettings: [
+                .linkedFramework("OpenGL", .when(platforms: [.macOS]))
+            ]
+        ),
+        .target(name: "MuJoCo", dependencies: ["CMuJoCo", "CMuJoCoGL"]),
         .executableTarget(name: "MujocoDemo", dependencies: ["MuJoCo"], path: "Sources/mujoco-demo"),
         .testTarget(name: "MuJoCoTests", dependencies: ["MuJoCo"]),
         .target(name: "WendyMuJoCo", dependencies: ["MuJoCo", "CMuJoCo"]),
