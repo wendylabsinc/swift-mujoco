@@ -673,7 +673,7 @@ public func negQuat(_ q: Quat) -> Quat { Quat(w: -q.w, x: -q.x, y: -q.y, z: -q.z
 
 /// Rotate a vector by a quaternion.
 public func rotVecQuat(_ v: Vec3, _ q: Quat) -> Vec3 {
-    quat2Mat(q).transposeTimesTranspose(v)
+    quat2Mat(q).times(v)
 }
 
 /// The rotation taking `b` to `a`, expressed as axis * angle (a rotation vector).
@@ -709,12 +709,14 @@ public func euler2Quat(roll: Double, pitch: Double, yaw: Double) -> Quat {
 }
 ```
 
-`rotVecQuat` needs one helper on `Mat3`. Append to the `Mat3` extension in the same file:
+`rotVecQuat` needs one helper on `Mat3`. Append to the `Mat3` extension in the same file.
+Note the existing `transposeTimes` (`MjMath.swift:19-31`) computes `Mᵀ · v`; this is the
+plain forward product, so it needs its own name rather than a variant spelling:
 
 ```swift
 extension Mat3 {
-    /// Multiply this matrix (row-major) by a column vector: `M * v`.
-    public func transposeTimesTranspose(_ v: Vec3) -> Vec3 {
+    /// Multiply this matrix (row-major) by a column vector: `M · v`.
+    public func times(_ v: Vec3) -> Vec3 {
         Vec3(m[0]*v.x + m[1]*v.y + m[2]*v.z,
              m[3]*v.x + m[4]*v.y + m[5]*v.z,
              m[6]*v.x + m[7]*v.y + m[8]*v.z)
@@ -830,16 +832,22 @@ private let rayScene = """
     #expect(first.map(\.?.distance) == second.map(\.?.distance))
 }
 
-@Test func batchRejectsOversizedCast() throws {
+@Test func batchHonoursItsCapacityExactly() throws {
     let m = try MjModel.load(xml: rayScene)
     let d = MjData(m)
     mjForward(m, d)
     let batch = MjRayBatch(capacity: 2)
-    // Capacity is a hard contract; casting more must be caught, not silently truncated.
     #expect(batch.capacity == 2)
-    let ok = batch.cast(model: m, data: d, origin: .init(0, 0, 0),
-                        directions: [Vec3(1, 0, 0), Vec3(0, 1, 0)])
-    #expect(ok.count == 2)
+    // A cast exactly at capacity must work and return one entry per direction.
+    // Exceeding capacity trips a `precondition`, which traps the process and so
+    // cannot be asserted from inside the test runner — the guard is documented
+    // in MjRayBatch.withHits rather than covered here. Do not "fix" this by
+    // converting the precondition to a thrown error just to make it testable:
+    // it matches the trapping contract of every other indexed accessor in this
+    // library (MjData.swift:41-52).
+    let got = batch.cast(model: m, data: d, origin: Vec3(0, 0, 0),
+                         directions: [Vec3(1, 0, 0), Vec3(0, 1, 0)])
+    #expect(got.count == 2)
 }
 
 @Test func lidarPatternShapeAndOrdering() {
@@ -1412,19 +1420,9 @@ void wmj_gl_destroy(wmj_gl_context *ctx) { (void)ctx; }
 
 - [ ] **Step 5: Wire the target into `Package.swift`**
 
-Add to `targets:`, before the `MuJoCo` target:
-
-```swift
-        .target(name: "CMuJoCoGL"),
-```
-
-and add `"CMuJoCoGL"` to the `MuJoCo` target's dependencies so it reads:
-
-```swift
-        .target(name: "MuJoCo", dependencies: ["CMuJoCo", "CMuJoCoGL"]),
-```
-
-On macOS the CGL path needs the OpenGL framework. Add to the `CMuJoCoGL` target:
+Add **one** new target to `targets:`, before the `MuJoCo` target. The macOS CGL path
+needs the OpenGL framework; Linux needs no linker settings, because `dlopen`/`dlsym`
+are in libc on glibc ≥ 2.34 and SwiftPM links libdl automatically on older glibc:
 
 ```swift
         .target(
@@ -1435,7 +1433,11 @@ On macOS the CGL path needs the OpenGL framework. Add to the `CMuJoCoGL` target:
         ),
 ```
 
-Linux needs **no** linker settings — `dlopen`/`dlsym` are in libc on glibc ≥ 2.34, and SwiftPM links libdl automatically on older glibc.
+Then add `"CMuJoCoGL"` to the `MuJoCo` target's dependencies so it reads:
+
+```swift
+        .target(name: "MuJoCo", dependencies: ["CMuJoCo", "CMuJoCoGL"]),
+```
 
 - [ ] **Step 6: Run tests to verify they pass**
 
@@ -1471,7 +1473,27 @@ Create `Tests/MuJoCoTests/RenderTests.swift`:
 
 ```swift
 import Testing
+import Foundation
 @testable import MuJoCo
+
+/// Returns true when a render test may proceed, false when it should return early.
+///
+/// Skipping is correct on a GL-less dev box — the suite must still go green there.
+/// But a permanently-skipped render test reads as coverage while testing nothing,
+/// so CI sets `SWIFT_MUJOCO_REQUIRE_GL=1`, which turns the skip into a recorded
+/// failure. A runner that silently loses its Mesa stack then fails the build
+/// instead of reporting a green suite that exercised no rendering.
+///
+/// This records an Issue rather than throwing, because a thrown error marks a
+/// Swift Testing test as *failed* — which is exactly what we do NOT want on a
+/// machine that legitimately has no GL.
+func glAvailableOrRecordSkip() -> Bool {
+    if MjOffscreenRenderer.isAvailable { return true }
+    if ProcessInfo.processInfo.environment["SWIFT_MUJOCO_REQUIRE_GL"] == "1" {
+        Issue.record("SWIFT_MUJOCO_REQUIRE_GL=1 but no GL context could be created")
+    }
+    return false
+}
 
 /// A red box dead ahead of a fixed camera, against the default background.
 private let renderScene = """
@@ -1512,11 +1534,7 @@ private let renderScene = """
 }
 
 @Test func offscreenRenderProducesRedCentreAndSaneDepth() throws {
-    guard MjOffscreenRenderer.isAvailable else {
-        // No GL on this machine. Skipping is correct here: the suite must stay
-        // green on a GL-less dev box and in a GL-less CI container.
-        return
-    }
+    guard glAvailableOrRecordSkip() else { return }
     let m = try MjModel.load(xml: renderScene)
     let d = MjData(m)
     mjForward(m, d)
@@ -1542,7 +1560,7 @@ private let renderScene = """
 }
 
 @Test func resizeChangesFrameDimensions() throws {
-    guard MjOffscreenRenderer.isAvailable else { return }
+    guard glAvailableOrRecordSkip() else { return }
     let m = try MjModel.load(xml: renderScene)
     let d = MjData(m)
     mjForward(m, d)
@@ -1554,7 +1572,7 @@ private let renderScene = """
 }
 
 @Test func renderRejectsBadCameraId() throws {
-    guard MjOffscreenRenderer.isAvailable else { return }
+    guard glAvailableOrRecordSkip() else { return }
     let m = try MjModel.load(xml: renderScene)
     let d = MjData(m)
     mjForward(m, d)
@@ -1776,12 +1794,21 @@ Expected: `cameraIntrospection` passes everywhere. The four render tests pass wh
 
 - [ ] **Step 5: Verify the skip path is honest**
 
+A permanently-skipped render test reads as coverage while testing nothing, so prove
+both branches work. Print which one you took:
+
 ```bash
-# Force the no-GL path and confirm the suite is still green rather than silently empty.
-LIBEGL_ALWAYS_MISSING=1 swift test --filter RenderTests 2>&1 | tail -10
+swift test --filter RenderTests 2>&1 | tail -10
+# Then report, in your task report, ONE of:
+#   "GL available (backend: egl|cgl) — all 4 render tests executed"
+#   "GL unavailable — 3 render tests skipped; cameraIntrospection executed"
+# Determine which by checking the backend and context availability directly:
+swift run --package-path . mujoco-demo >/dev/null 2>&1 || true
 ```
 
-Expected: green. Then confirm you actually exercised rendering at least once on a GL-capable machine — a permanently-skipped render test is worse than none, because it reads as coverage.
+If GL was unavailable on your machine, say so plainly in the report rather than
+claiming the render path is verified. Task 9's CI runs these tests on a runner with
+Mesa llvmpipe installed, which is where the render path is genuinely proven.
 
 - [ ] **Step 6: Commit**
 
@@ -2062,17 +2089,27 @@ Create `Tests/MuJoCoTests/PerfContractTests.swift`:
 import Testing
 @testable import MuJoCo
 
-@Test func introspectionIsCachedNotRecomputed() throws {
+@Test func repeatedIntrospectionIsStable() throws {
+    // Caching is an internal optimization with no observable identity, so this
+    // asserts the contract callers actually depend on: repeated access returns
+    // the same values, so a hot loop reading `m.joints` cannot drift. The
+    // caching itself is verified by `cachedJointsIsPopulatedAfterFirstAccess`.
     let m = try MjModel.load(xml: Fixtures.pendulum)
-    // Identity of the returned arrays is not observable, so assert the contract
-    // that matters: repeated access is consistent and cheap enough to call in a
-    // loop without changing results.
-    let a = m.joints
-    let b = m.joints
-    #expect(a.count == b.count)
-    #expect(a.map(\.name) == b.map(\.name))
+    #expect(m.joints.map(\.name) == m.joints.map(\.name))
+    #expect(m.joints.map(\.qposadr) == m.joints.map(\.qposadr))
     #expect(m.actuators.map(\.name) == m.actuators.map(\.name))
-    #expect(m.sensors.count == m.sensors.count)
+    #expect(m.sensors.map(\.adr) == m.sensors.map(\.adr))
+    #expect(m.bodyNames == m.bodyNames)
+}
+
+@Test func cachedJointsIsPopulatedAfterFirstAccess() throws {
+    // The actual caching assertion. `@testable import` reaches the private
+    // storage, so this fails if someone reverts to recompute-per-access.
+    let m = try MjModel.load(xml: Fixtures.pendulum)
+    #expect(m.cachedJoints == nil, "cache must start empty")
+    _ = m.joints
+    #expect(m.cachedJoints != nil, "first access must populate the cache")
+    #expect(m.cachedJoints?.count == 1)
 }
 
 @Test func nonAllocatingAccessorsMatchAllocatingOnes() throws {
@@ -2114,10 +2151,13 @@ In `Sources/MuJoCo/MjModel.swift`, add private storage next to `ptr`:
     // Introspection is a load-time snapshot: MuJoCo's model topology cannot
     // change without a recompile, and recomputing these O(n) lists on every
     // access showed up as avoidable work in a 200 Hz loop.
-    private var cachedJoints: [JointInfo]?
-    private var cachedActuators: [ActuatorInfo]?
-    private var cachedSensors: [SensorInfo]?
-    private var cachedBodyNames: [String]?
+    //
+    // `internal`, not `private`, so `@testable import` can assert the cache is
+    // actually populated — `private` is invisible even to @testable.
+    var cachedJoints: [JointInfo]?
+    var cachedActuators: [ActuatorInfo]?
+    var cachedSensors: [SensorInfo]?
+    var cachedBodyNames: [String]?
 ```
 
 Then rename the existing computed properties to private `compute*` functions and wrap them. For `joints` (currently at `:94`), change:
@@ -2308,24 +2348,17 @@ PY
           LD_LIBRARY_PATH: /home/runner/.local/lib
           EGL_PLATFORM: surfaceless
           LIBGL_ALWAYS_SOFTWARE: "1"
+          # Turns the render tests' legitimate dev-box skip into a hard failure
+          # here, where Mesa llvmpipe IS installed. Without this, a runner that
+          # loses its GL stack reports a green suite that rendered nothing.
+          SWIFT_MUJOCO_REQUIRE_GL: "1"
         run: swift test -v
 
-      - name: Assert rendering was actually exercised, not skipped
-        env:
-          PKG_CONFIG_PATH: /home/runner/.local/lib/pkgconfig
-          LD_LIBRARY_PATH: /home/runner/.local/lib
-          EGL_PLATFORM: surfaceless
-          LIBGL_ALWAYS_SOFTWARE: "1"
-        run: |
-          # A permanently-skipped render test reads as coverage but is not. Fail
-          # CI if this runner could not create a GL context at all.
-          swift test --filter GLContextTests 2>&1 | tee gl.log
-          swift run --package-path . mujoco-demo >/dev/null 2>&1 || true
-          if ! swift test --filter offscreenRenderProducesRedCentreAndSaneDepth 2>&1 \
-               | grep -qE "Test offscreenRenderProducesRedCentreAndSaneDepth.*passed"; then
-            echo "::error::render test did not pass on a runner that should have GL"
-            exit 1
-          fi
+The `Test` step above already covers rendering, because it sets
+`SWIFT_MUJOCO_REQUIRE_GL: "1"` in the workflow written in Step 2. That converts the render tests' skip into
+a hard failure, so a runner that silently lost its GL stack fails CI instead of
+reporting a green suite that tested nothing. No extra step and no output scraping is
+needed: `swift test`'s own exit code is the signal.
 
   macos:
     name: macOS
