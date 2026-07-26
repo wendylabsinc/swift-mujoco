@@ -5,7 +5,7 @@ import Glibc
 import Darwin
 #endif
 
-public struct Vec3: Equatable {
+public struct Vec3: Equatable, Sendable {
     public var x, y, z: Double
     public init(_ x: Double, _ y: Double, _ z: Double) { self.x = x; self.y = y; self.z = z }
     public init(_ a: [Double]) { self.init(a[0], a[1], a[2]) }
