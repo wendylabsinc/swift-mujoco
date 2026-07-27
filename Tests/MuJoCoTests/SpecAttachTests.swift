@@ -50,6 +50,28 @@ private let armXML = """
     #expect(m.ngeom == 3)
 }
 
+// Pins the lifetime contract of `attach`: `mjs_attach` links the child by
+// reference (the merge happens inside `mj_compile`, reading live from the
+// child's `mjSpec`), so `MjSpec.attach` must retain the child itself. Here
+// the caller's only strong reference to `child` dies at the end of the `do`
+// scope, before `compile()` runs.
+//
+// Note: this test alone does not *prove* the retain is correct — without it,
+// reading the freed child would be undefined behaviour, which can crash OR
+// can silently "work" on a given run/allocator state. It is the retain in
+// `attach` (an `attachedChildren: [MjSpec]` array on the parent) that makes
+// this safe; this test only documents the contract and would catch an
+// outright removal of that retain.
+@Test func parentRetainsAttachedChildBeyondCallerScope() throws {
+    let parent = MjSpec(floor: true, light: true)
+    do {
+        let child = try MjSpec(xml: armXML)
+        try parent.attach(child, prefix: "a_", toBody: "world")
+    }   // caller's only reference to child dies here
+    let m = try parent.compile()
+    #expect(m.id(of: objBody, name: "a_link") != nil)
+}
+
 @Test func addSiteAndCameraAppearInCompiledModel() throws {
     let spec = MjSpec(floor: false, light: true)
     let body = spec.addBody(name: "head", pos: [0, 0, 1])

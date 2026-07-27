@@ -14,6 +14,10 @@ public final class MjSpec {
     /// wrapper that assumes ownership.
     public let ptr: UnsafeMutablePointer<mjSpec>
 
+    /// Children linked into this spec via `attach`, retained for as long as
+    /// this spec is. See `attach` for why this is required, not optional.
+    private var attachedChildren: [MjSpec] = []
+
     public init(floor: Bool = true, light: Bool = true) {
         self.ptr = mj_makeSpec()
         let world = mjs_findBody(ptr, "world")
@@ -86,8 +90,13 @@ public final class MjSpec {
     /// and sensor from `child`'s worldbody gains `prefix` (and `suffix`), so
     /// two copies of the same robot no longer collide on names.
     ///
-    /// `child` must outlive this call but is not consumed — MuJoCo copies
-    /// from it into this spec.
+    /// `mjs_attach` links the child in **by reference, not by copy**: the
+    /// actual merge is deferred until `mj_compile` runs, and that compile
+    /// reads live from `child`'s `mjSpec`. `child`'s underlying `mjSpec*`
+    /// therefore must stay alive until this spec is done with it (including
+    /// through every later `compile()`/`saveXML()`/`findBodyNames()` call).
+    /// This method retains `child` for exactly that reason, so callers may
+    /// safely pass a temporary that they otherwise hold no reference to.
     public func attach(_ child: MjSpec, prefix: String, suffix: String = "",
                         toBody body: String = "world") throws {
         guard let parent = mjs_findBody(ptr, body) else {
@@ -103,6 +112,9 @@ public final class MjSpec {
                           prefix, suffix) != nil else {
             throw MjError("attach failed: " + String(cString: mjs_getError(ptr)))
         }
+        // Tie child's lifetime to ours: mjs_attach links by reference, and
+        // mj_compile reads live from child.ptr, so it must outlive us.
+        attachedChildren.append(child)
     }
 
     /// Add a site — where IMUs, rangefinders and touch sensors mount.
