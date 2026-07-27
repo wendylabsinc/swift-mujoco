@@ -105,3 +105,72 @@ private let renderScene = """
     let r = try MjOffscreenRenderer(model: m, width: 64, height: 64)
     #expect(throws: MjError.self) { try r.render(data: d, cameraId: 99) }
 }
+
+/// A small green box offset **above** the camera's optical axis in world Z.
+/// The camera's `xyaxes` maps world +Z to "up" in the image, so a correctly
+/// top-down frame (row 0 = top) must show the box in the upper half of both
+/// the rgb and depth buffers. Unlike `renderScene`, this scene is NOT
+/// vertically symmetric about the camera axis, so it can actually distinguish
+/// "flipped" from "not flipped" — and catch a flip applied to one buffer but
+/// not the other.
+private let asymmetricScene = """
+<mujoco>
+  <visual>
+    <global offwidth="320" offheight="240"/>
+  </visual>
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" directional="true"/>
+    <body name="target" pos="2 0 0.6">
+      <geom name="greenbox" type="box" size="0.15 0.15 0.15" rgba="0 1 0 1"/>
+    </body>
+    <camera name="eye" pos="0 0 0" xyaxes="0 -1 0 0 0 1" fovy="45"/>
+  </worldbody>
+</mujoco>
+"""
+
+@Test func renderRowOrderIsTopDownForBothRgbAndDepth() throws {
+    guard glAvailableOrRecordSkip() else { return }
+    let m = try MjModel.load(xml: asymmetricScene)
+    let d = MjData(m)
+    mjForward(m, d)
+    let eye = try #require(m.id(of: objCamera, name: "eye"))
+    let r = try MjOffscreenRenderer(model: m, width: 320, height: 240)
+    let frame = try r.render(data: d, cameraId: eye)
+
+    // Locate the greenest pixel in the frame (the box) by row.
+    var bestGreenRow = -1
+    var bestGreenScore = -1
+    for row in 0..<frame.height {
+        for col in 0..<frame.width {
+            let i = (row * frame.width + col) * 3
+            let g = Int(frame.rgb[i + 1])
+            let rr = Int(frame.rgb[i])
+            let b = Int(frame.rgb[i + 2])
+            let score = g - max(rr, b)
+            if g > 100 && score > bestGreenScore {
+                bestGreenScore = score
+                bestGreenRow = row
+            }
+        }
+    }
+    #expect(bestGreenRow >= 0, "no green pixel found in the frame at all")
+    #expect(bestGreenRow < frame.height / 2,
+            "box sits above the camera axis, so row 0 = top must place it in the upper half; got row \(bestGreenRow) of \(frame.height)")
+
+    // Locate the nearest (smallest finite) depth reading by row.
+    var bestDepthRow = -1
+    var bestDepth = Float.infinity
+    for row in 0..<frame.height {
+        for col in 0..<frame.width {
+            let z = frame.depth[row * frame.width + col]
+            if z < bestDepth {
+                bestDepth = z
+                bestDepthRow = row
+            }
+        }
+    }
+    #expect(bestDepth.isFinite && bestDepth < 5.0,
+            "expected the box's near depth (a few metres), got \(bestDepth)")
+    #expect(bestDepthRow < frame.height / 2,
+            "box sits above the camera axis, so row 0 = top must place its near depth in the upper half; got row \(bestDepthRow) of \(frame.height)")
+}

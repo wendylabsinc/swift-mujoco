@@ -65,11 +65,18 @@ public struct RenderedFrame: Sendable {
 public final class MjOffscreenRenderer {
     /// Whether a GL context can be created on this machine. Check before
     /// constructing if a missing GL should degrade rather than throw.
-    public static var isAvailable: Bool {
+    ///
+    /// Probes by creating and immediately destroying a throwaway context, so
+    /// it is safe to call before any renderer exists. Cached after the first
+    /// call: repeated probing would otherwise clear whichever context is
+    /// current on this thread (`wmj_gl_destroy` unconditionally clears the
+    /// thread's current-context state), which would silently break a live
+    /// renderer's next `render()` call if this were checked again afterwards.
+    public static let isAvailable: Bool = {
         guard let c = wmj_gl_create() else { return false }
         wmj_gl_destroy(c)
         return true
-    }
+    }()
 
     private let model: MjModel
     private let gl: OpaquePointer
@@ -114,6 +121,14 @@ public final class MjOffscreenRenderer {
     }
 
     deinit {
+        // Re-assert currency before freeing: something else on this thread
+        // (another renderer, an `isAvailable` probe) may have changed or
+        // cleared the current context since this one was last made current.
+        // Freeing GL objects against the wrong (or no) current context is
+        // undefined, so this makes the deletes target the right one. The
+        // return value is ignored — deinit cannot throw and there is nothing
+        // better to do on failure than attempt the frees anyway.
+        _ = wmj_gl_make_current(gl)
         mjr_freeContext(&context)
         mjv_freeScene(&scene)
         wmj_gl_destroy(gl)
@@ -122,6 +137,7 @@ public final class MjOffscreenRenderer {
     /// Change the render size. Reallocates the pixel buffers.
     public func resize(width newWidth: Int, height newHeight: Int) throws {
         precondition(newWidth > 0 && newHeight > 0)
+        try makeCurrentOrThrow()
         mjr_resizeOffscreen(Int32(newWidth), Int32(newHeight), &context)
         width = newWidth
         height = newHeight
@@ -134,6 +150,7 @@ public final class MjOffscreenRenderer {
         guard cameraId >= 0 && cameraId < model.ncam else {
             throw MjError("render: no camera with id \(cameraId) (model has \(model.ncam))")
         }
+        try makeCurrentOrThrow()
         var camera = mjvCamera()
         mjv_defaultCamera(&camera)
         camera.type = Int32(mjCAMERA_FIXED.rawValue)
@@ -148,6 +165,23 @@ public final class MjOffscreenRenderer {
         return RenderedFrame(rgb: flipVertically(rgbBuffer, bytesPerPixel: 3),
                              depth: linearizeAndFlipDepth(depthBuffer),
                              width: width, height: height)
+    }
+
+    /// Re-establishes this renderer's GL context as current on the calling
+    /// thread before touching any `mjv_*`/`mjr_*` state.
+    ///
+    /// `wmj_gl_destroy` unconditionally clears whichever context is current
+    /// on the thread, regardless of which context it was destroying. So a
+    /// stray `MjOffscreenRenderer.isAvailable` probe (or a second renderer on
+    /// the same thread) can silently leave this renderer's context no longer
+    /// current between calls. `init` makes its context current exactly once;
+    /// every subsequent entry point re-asserts it here rather than assuming
+    /// it is still in effect, which makes multiple renderers on one thread
+    /// safe and makes any external disturbance self-healing.
+    private func makeCurrentOrThrow() throws {
+        guard wmj_gl_make_current(gl) == 1 else {
+            throw MjError("could not make GL context current: " + String(cString: wmj_gl_last_error()))
+        }
     }
 
     /// `mjr_readPixels` returns rows bottom-up (OpenGL convention). Flip so row
