@@ -33,10 +33,18 @@ jobs:
           python3 -m venv .venv-mujoco
           ./.venv-mujoco/bin/pip install --upgrade pip
           ./.venv-mujoco/bin/pip install "mujoco==3.10.0"
-          # libegl1 + mesa DRI gives llvmpipe: real offscreen GL with no GPU,
-          # so the render tests actually execute in CI instead of skipping.
+          # libegl1 is only glvnd's dispatch library - it enumerates vendor
+          # ICDs from /usr/share/glvnd/egl_vendor.d/ but ships no driver
+          # itself. Mesa's ICD is libegl-mesa0, which libegl1 does not
+          # depend on and which libgl1-mesa-dri does not pull in (the
+          # dependency runs the other way); without it eglInitialize fails
+          # with "no usable EGL driver". libgl1-mesa-dri supplies the
+          # llvmpipe software rasterizer so this all works with no GPU.
+          # libopengl0 (glvnd's libOpenGL.so.0) is separately required
+          # because MuJoCo's mjr_makeContext resolves desktop-GL entry
+          # points, which under glvnd live there rather than in libGL.
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1-mesa-dri
+          sudo apt-get install -y libegl1 libegl-mesa0 libgl1 libglx-mesa0 libgl1-mesa-dri libopengl0
           PYTHON="$PWD/.venv-mujoco/bin/python" bash Scripts/install-mujoco.sh
 
       - name: Build
