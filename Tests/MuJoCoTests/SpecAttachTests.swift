@@ -48,6 +48,15 @@ private let armXML = """
     // Two hinges, two capsules, plus the floor plane.
     #expect(m.njnt == 2)
     #expect(m.ngeom == 3)
+
+    // Neither findBodyNames() nor saveXML() has been exercised on a parent
+    // spec with attached children before — both go through
+    // mj_copySpec -> mj_compile -> mj_deleteSpec, and attach links by
+    // reference, so this checks that path doesn't disturb the still-live
+    // attachedChildren.
+    #expect(parent.findBodyNames().contains("a_link"))
+    let parentXML = try parent.saveXML()
+    #expect(parentXML.contains("a_link") && parentXML.contains("b_link"))
 }
 
 // Pins the lifetime contract of `attach`: `mjs_attach` links the child by

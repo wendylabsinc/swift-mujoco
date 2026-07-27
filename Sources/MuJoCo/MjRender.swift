@@ -1,5 +1,10 @@
 import CMuJoCo
 import CMuJoCoGL
+#if canImport(Glibc)
+import Glibc
+#else
+import Darwin
+#endif
 
 extension MjModel {
     /// Name of a camera, or nil for an unnamed one.
@@ -86,7 +91,14 @@ public final class MjOffscreenRenderer {
     public private(set) var width: Int
     public private(set) var height: Int
 
-    // Reused across frames so a 15 Hz camera allocates nothing per tick.
+    // These *scratch* buffers are reused across frames — `mjr_readPixels`
+    // writes into the same backing storage every call, so this class does
+    // not allocate for that step. It does NOT make rendering allocation-free
+    // overall: `flipVertically` and `linearizeAndFlipDepth` each build a
+    // fresh array per frame, and `RenderedFrame` holds those by value (about
+    // 1.7 MB per 640x480 rgb+depth frame). Making `render` itself
+    // allocation-free would need `RenderedFrame` to borrow from
+    // caller-owned storage instead — a larger API change, out of scope here.
     private var rgbBuffer: [UInt8]
     private var depthBuffer: [Float]
 
@@ -147,6 +159,8 @@ public final class MjOffscreenRenderer {
 
     /// Render the model's camera `cameraId` at the current size.
     public func render(data: MjData, cameraId: Int) throws -> RenderedFrame {
+        precondition(data.model === model,
+                     "MjOffscreenRenderer.render: data does not belong to the model this renderer was created with")
         guard cameraId >= 0 && cameraId < model.ncam else {
             throw MjError("render: no camera with id \(cameraId) (model has \(model.ncam))")
         }

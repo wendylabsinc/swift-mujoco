@@ -1,4 +1,9 @@
 import CMuJoCo
+#if canImport(Glibc)
+import Glibc
+#else
+import Darwin
+#endif
 
 /// One raycast result: which geom was struck and how far along the ray.
 public struct RayHit: Equatable, Sendable {
@@ -15,6 +20,8 @@ extension MjData {
     ///
     /// - Parameters:
     ///   - geomGroupMask: bit i enables geom group i. `nil` means all groups.
+    ///     Only bits 0-5 are meaningful (`mjNGROUP == 6`); bits 6-7 of the
+    ///     `UInt8` are ignored.
     ///   - includeStatic: include geoms on static (worldbody) geometry.
     ///   - bodyExclude: skip all geoms on this body id; -1 excludes nothing.
     public func ray(from origin: Vec3, direction: Vec3,
@@ -98,6 +105,9 @@ public final class MjRayBatch {
     ///
     /// - Returns: one entry per direction, nil where the ray hit nothing.
     ///   Allocates the returned array; use `withHits` to avoid that.
+    /// - Parameter geomGroupMask: bit i enables geom group i; only bits 0-5
+    ///   are meaningful (`mjNGROUP == 6`), bits 6-7 are ignored. `nil` means
+    ///   all groups.
     /// - Parameter cutoff: `mj_multiRay` treats `cutoff` as a hard maximum
     ///   range: `0` means "ignore every geom", not "unlimited". `.infinity`
     ///   is the correct "no limit" default; a lidar should pass its real
@@ -107,7 +117,9 @@ public final class MjRayBatch {
                      includeStatic: Bool = true,
                      bodyExclude: Int = -1,
                      cutoff: Double = .infinity) -> [RayHit?] {
-        withHits(model: model, data: data, origin: origin, directions: directions,
+        precondition(model === data.model,
+                     "MjRayBatch.cast: data does not belong to model")
+        return withHits(model: model, data: data, origin: origin, directions: directions,
                  geomGroupMask: geomGroupMask, includeStatic: includeStatic,
                  bodyExclude: bodyExclude, cutoff: cutoff) { ids, dists in
             (0..<directions.count).map { i in
@@ -118,6 +130,9 @@ public final class MjRayBatch {
 
     /// Non-allocating batched cast. `body` receives the raw geom-id and distance
     /// buffers, valid only for its duration. A distance < 0 means "no hit".
+    /// - Parameter geomGroupMask: bit i enables geom group i; only bits 0-5
+    ///   are meaningful (`mjNGROUP == 6`), bits 6-7 are ignored. `nil` means
+    ///   all groups.
     /// - Parameter cutoff: `mj_multiRay` treats `cutoff` as a hard maximum
     ///   range: `0` means "ignore every geom", not "unlimited". `.infinity`
     ///   is the correct "no limit" default; a lidar should pass its real
@@ -128,6 +143,8 @@ public final class MjRayBatch {
                             bodyExclude: Int = -1,
                             cutoff: Double = .infinity,
                             _ body: (UnsafeBufferPointer<Int32>, UnsafeBufferPointer<Double>) -> R) -> R {
+        precondition(model === data.model,
+                     "MjRayBatch.withHits: data does not belong to model")
         precondition(directions.count <= capacity,
                      "MjRayBatch: \(directions.count) rays exceeds capacity \(capacity)")
         let n = directions.count

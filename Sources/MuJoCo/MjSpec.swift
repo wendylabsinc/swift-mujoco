@@ -12,6 +12,17 @@ public final class MjSpec {
     /// raw `mjSpec`. The library retains ownership of this pointer (it is
     /// freed in `deinit`); callers must NOT free it or hand it to another
     /// wrapper that assumes ownership.
+    ///
+    /// - Warning: `attach(_:prefix:suffix:toBody:)` retains its child in
+    ///   `attachedChildren` specifically so the child's `mjSpec*` outlives
+    ///   every later `compile()`/`saveXML()`/`findBodyNames()` on the parent
+    ///   (`mjs_attach` links by reference; the merge happens lazily inside
+    ///   `mj_compile`, reading live from the child). Calling `mjs_attach`
+    ///   directly through this `ptr` — bypassing `MjSpec.attach` — skips that
+    ///   retain and reintroduces the same use-after-free it exists to
+    ///   prevent. Separately, a deliberate mutual attach between two
+    ///   `MjSpec`s (A retains B via `attachedChildren` and B retains A) would
+    ///   create a retain cycle and leak both; nothing here detects that.
     public let ptr: UnsafeMutablePointer<mjSpec>
 
     /// Children linked into this spec via `attach`, retained for as long as
