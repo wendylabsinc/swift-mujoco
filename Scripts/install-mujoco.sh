@@ -27,7 +27,16 @@ case "$(uname -s)" in
     ;;
   Linux)
     ln -sf "$BASE" "$PREFIX/lib/libmujoco.so"
-    ldconfig "$PREFIX/lib" 2>/dev/null || true
+    # ldconfig only rescans directories listed in /etc/ld.so.conf(.d), so it is
+    # a no-op for a user-local prefix. Register the prefix properly when we can
+    # (root), and always tell the caller what to export when we cannot.
+    if [ "$(id -u)" = "0" ]; then
+      echo "$PREFIX/lib" > /etc/ld.so.conf.d/mujoco.conf
+      ldconfig
+    else
+      echo "note: $PREFIX/lib is not on the default loader path."
+      echo "      export LD_LIBRARY_PATH=$PREFIX/lib:\$LD_LIBRARY_PATH"
+    fi
     ;;
 esac
 

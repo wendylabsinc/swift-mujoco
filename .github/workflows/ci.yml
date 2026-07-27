@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.1"
+
+      - name: Install MuJoCo and a software GL stack
+        env:
+          MUJOCO_PREFIX: /home/runner/.local
+        run: |
+          set -euxo pipefail
+          python3 -m venv .venv-mujoco
+          ./.venv-mujoco/bin/pip install --upgrade pip
+          ./.venv-mujoco/bin/pip install "mujoco==3.10.0"
+          # libegl1 + mesa DRI gives llvmpipe: real offscreen GL with no GPU,
+          # so the render tests actually execute in CI instead of skipping.
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1-mesa-dri
+          PYTHON="$PWD/.venv-mujoco/bin/python" bash Scripts/install-mujoco.sh
+
+      - name: Build
+        env:
+          PKG_CONFIG_PATH: /home/runner/.local/lib/pkgconfig
+          LD_LIBRARY_PATH: /home/runner/.local/lib
+        run: swift build -v
+
+      - name: Test
+        env:
+          PKG_CONFIG_PATH: /home/runner/.local/lib/pkgconfig
+          LD_LIBRARY_PATH: /home/runner/.local/lib
+          EGL_PLATFORM: surfaceless
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          # Turns the render tests' legitimate dev-box skip into a hard failure
+          # here, where Mesa llvmpipe IS installed. Without this, a runner that
+          # loses its GL stack would report a green suite that rendered nothing.
+          SWIFT_MUJOCO_REQUIRE_GL: "1"
+        run: swift test -v
+
+  macos:
+    name: macOS
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MuJoCo
+        env:
+          MUJOCO_PREFIX: /Users/runner/.local
+        run: |
+          set -euxo pipefail
+          python3 -m venv .venv-mujoco
+          ./.venv-mujoco/bin/pip install --upgrade pip
+          ./.venv-mujoco/bin/pip install "mujoco==3.10.0"
+          PYTHON="$PWD/.venv-mujoco/bin/python" bash Scripts/install-mujoco.sh
+
+      - name: Build and test
+        env:
+          PKG_CONFIG_PATH: /Users/runner/.local/lib/pkgconfig
+        run: |
+          swift build -v
+          swift test -v
