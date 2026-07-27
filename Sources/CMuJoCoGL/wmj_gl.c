@@ -168,8 +168,26 @@ void wmj_gl_destroy(wmj_gl_context *ctx) {
     if (!ctx) return;
     ctx->MakeCurrent(ctx->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     ctx->DestroyContext(ctx->dpy, ctx->ctx);
-    ctx->Terminate(ctx->dpy);
-    if (ctx->lib) dlclose(ctx->lib);
+    /* Deliberately do NOT call ctx->Terminate(ctx->dpy) or dlclose(ctx->lib)
+       here. wmj_gl_create always fetches the display via
+       eglGetDisplay(EGL_DEFAULT_DISPLAY); per EGL 1.5 SS3.2, repeated calls with
+       the same display_id return the SAME EGLDisplay handle, and
+       eglInitialize/eglTerminate are not reference-counted. eglTerminate
+       destroys every resource on that display not current to some thread —
+       so terminating here would destroy any OTHER live wmj_gl_context sharing
+       this process's default display (two MjOffscreenRenderers, or the
+       isAvailable probe running next to a live renderer, or the test suite
+       running contexts in parallel). dlclose(ctx->lib) is similarly unsafe:
+       a concurrent wmj_gl_create can be inside libEGL on another thread while
+       this thread unloads it, and Mesa/glvnd are not reliably safe to unload
+       and reload.
+       Both the display and the libEGL.so handle are process-global
+       singletons, so we leak them on purpose — the same choice established
+       headless-EGL backends (e.g. dm_control's) make. Do NOT "fix" this back;
+       see the CRITICAL finding in the 0.2.0 final review for the failure
+       mode this avoids. The failure paths inside wmj_gl_create are unaffected
+       and still correctly call Terminate/dlclose there, since no context was
+       ever successfully created in those cases. */
     free(ctx);
 }
 

@@ -59,6 +59,39 @@ private let renderScene = """
     #expect(abs(k.fy - 120.0 / 0.41421356) < 0.01)
 }
 
+/// A small green box offset **above** the camera's optical axis in world Z.
+/// The camera's `xyaxes` maps world +Z to "up" in the image, so a correctly
+/// top-down frame (row 0 = top) must show the box in the upper half of both
+/// the rgb and depth buffers. Unlike `renderScene`, this scene is NOT
+/// vertically symmetric about the camera axis, so it can actually distinguish
+/// "flipped" from "not flipped" — and catch a flip applied to one buffer but
+/// not the other.
+private let asymmetricScene = """
+<mujoco>
+  <visual>
+    <global offwidth="320" offheight="240"/>
+  </visual>
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" directional="true"/>
+    <body name="target" pos="2 0 0.6">
+      <geom name="greenbox" type="box" size="0.15 0.15 0.15" rgba="0 1 0 1"/>
+    </body>
+    <camera name="eye" pos="0 0 0" xyaxes="0 -1 0 0 0 1" fovy="45"/>
+  </worldbody>
+</mujoco>
+"""
+
+// These tests all create real GL contexts via `MjOffscreenRenderer` /
+// `wmj_gl_create`. On Linux they share a single process-global EGL display
+// (see the comment in `wmj_gl_destroy`), so running them concurrently used
+// to risk one test's context teardown tearing down another's. `.serialized`
+// keeps Swift Testing from running these `@Test` methods in parallel with
+// each other; free `@Test` functions cannot carry `.serialized` directly, so
+// they are grouped into this suite instead of adding `--no-parallel` to the
+// whole `swift test` invocation.
+@Suite(.serialized)
+struct GLRenderTests {
+
 @Test func offscreenRenderProducesRedCentreAndSaneDepth() throws {
     guard glAvailableOrRecordSkip() else { return }
     let m = try MjModel.load(xml: renderScene)
@@ -106,27 +139,38 @@ private let renderScene = """
     #expect(throws: MjError.self) { try r.render(data: d, cameraId: 99) }
 }
 
-/// A small green box offset **above** the camera's optical axis in world Z.
-/// The camera's `xyaxes` maps world +Z to "up" in the image, so a correctly
-/// top-down frame (row 0 = top) must show the box in the upper half of both
-/// the rgb and depth buffers. Unlike `renderScene`, this scene is NOT
-/// vertically symmetric about the camera axis, so it can actually distinguish
-/// "flipped" from "not flipped" — and catch a flip applied to one buffer but
-/// not the other.
-private let asymmetricScene = """
-<mujoco>
-  <visual>
-    <global offwidth="320" offheight="240"/>
-  </visual>
-  <worldbody>
-    <light pos="0 0 3" dir="0 0 -1" directional="true"/>
-    <body name="target" pos="2 0 0.6">
-      <geom name="greenbox" type="box" size="0.15 0.15 0.15" rgba="0 1 0 1"/>
-    </body>
-    <camera name="eye" pos="0 0 0" xyaxes="0 -1 0 0 0 1" fovy="45"/>
-  </worldbody>
-</mujoco>
-"""
+/// Regression test for the CRITICAL finding in the 0.2.0 final review: on
+/// Linux, `wmj_gl_create` fetches EGL's default display with
+/// `eglGetDisplay(EGL_DEFAULT_DISPLAY)`, and repeated calls return the SAME
+/// `EGLDisplay` handle (EGL 1.5 SS3.2). `eglInitialize`/`eglTerminate` are not
+/// reference-counted, so if `wmj_gl_destroy` ever calls `eglTerminate` again,
+/// destroying renderer B here would tear down the display out from under
+/// still-live renderer A, and A's next `render()` would fail or crash.
+///
+/// This passes on macOS (CGL) regardless of the bug, since CGL contexts do
+/// not share a global display — it is the test that goes red on Linux
+/// without the fix that removed `Terminate`/`dlclose` from `wmj_gl_destroy`.
+@Test func secondRendererDestroyedDoesNotBreakFirst() throws {
+    guard glAvailableOrRecordSkip() else { return }
+    let m = try MjModel.load(xml: renderScene)
+    let d = MjData(m)
+    mjForward(m, d)
+    let eye = try #require(m.id(of: objCamera, name: "eye"))
+
+    let rendererA = try MjOffscreenRenderer(model: m, width: 320, height: 240)
+    _ = try rendererA.render(data: d, cameraId: eye)
+
+    do {
+        let rendererB = try MjOffscreenRenderer(model: m, width: 320, height: 240)
+        _ = try rendererB.render(data: d, cameraId: eye)
+    }   // rendererB destroyed here — must not disturb the shared EGL display
+
+    // A must still work after B's teardown.
+    let frame = try rendererA.render(data: d, cameraId: eye)
+    #expect(frame.width == 320 && frame.height == 240)
+    let centre = ((240 / 2) * 320 + (320 / 2)) * 3
+    #expect(frame.rgb[centre] > 100, "renderer A broke after renderer B was destroyed")
+}
 
 @Test func renderRowOrderIsTopDownForBothRgbAndDepth() throws {
     guard glAvailableOrRecordSkip() else { return }
@@ -174,3 +218,5 @@ private let asymmetricScene = """
     #expect(bestDepthRow < frame.height / 2,
             "box sits above the camera axis, so row 0 = top must place its near depth in the upper half; got row \(bestDepthRow) of \(frame.height)")
 }
+
+}   // GLRenderTests
