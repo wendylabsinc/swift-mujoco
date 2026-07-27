@@ -7,6 +7,12 @@ extension MjModel {
 
 extension MjData {
     /// Cartesian position of a body's frame origin, world coordinates.
+    ///
+    /// - Note: Despite the generic-looking name, this is body-specific and
+    ///   bounds-checks against `model.nbody` — passing a site or geom id here
+    ///   silently reads an unrelated body's pose whenever that id happens to
+    ///   be `< nbody`. Prefer the unambiguous `bodyPos(_:)`, which forwards
+    ///   to this same implementation.
     public func xpos(_ i: Int) -> Vec3 {
         precondition(i >= 0 && i < model.nbody)
         let b = ptr.pointee.xpos!            // mjtNum*, nbody*3
@@ -14,6 +20,9 @@ extension MjData {
     }
 
     /// Orientation of a body's frame as a quaternion, MuJoCo (w,x,y,z) order.
+    ///
+    /// - Note: Body-specific despite the generic name; see `xpos(_:)`.
+    ///   Prefer `bodyQuat(_:)`, which forwards to this same implementation.
     public func xquat(_ i: Int) -> Quat {
         precondition(i >= 0 && i < model.nbody)
         let b = ptr.pointee.xquat!           // mjtNum*, nbody*4
@@ -21,11 +30,28 @@ extension MjData {
     }
 
     /// Orientation of a body's frame as a row-major 3x3 matrix.
+    ///
+    /// - Note: Body-specific despite the generic name; see `xpos(_:)`.
+    ///   Prefer `bodyMat(_:)`, which forwards to this same implementation.
     public func xmat(_ i: Int) -> [Double] {
         precondition(i >= 0 && i < model.nbody)
         let b = ptr.pointee.xmat!            // mjtNum*, nbody*9
         return (0..<9).map { b[i*9 + $0] }
     }
+
+    /// Cartesian position of a body's frame origin, world coordinates.
+    /// Clearly-named forward of `xpos(_:)`, which sites and geoms would
+    /// otherwise ambiguously share the name of (`sitePos`/`geomXpos` already
+    /// disambiguate; `xpos` alone historically did not).
+    public func bodyPos(_ i: Int) -> Vec3 { xpos(i) }
+
+    /// Orientation of a body's frame as a quaternion, MuJoCo (w,x,y,z) order.
+    /// Clearly-named forward of `xquat(_:)`.
+    public func bodyQuat(_ i: Int) -> Quat { xquat(i) }
+
+    /// Orientation of a body's frame as a row-major 3x3 matrix.
+    /// Clearly-named forward of `xmat(_:)`.
+    public func bodyMat(_ i: Int) -> [Double] { xmat(i) }
 
     /// World position of a site — where IMUs and rangefinders are mounted.
     public func sitePos(_ i: Int) -> Vec3 {
@@ -57,6 +83,11 @@ extension MjData {
         let b = ptr.pointee.cam_xmat!        // mjtNum*, ncam*9
         return (0..<9).map { b[i*9 + $0] }
     }
+
+    /// World orientation of a camera as a quaternion. Sites and geoms both
+    /// have a quaternion accessor (`siteQuat`/`geomQuat`); this fills the
+    /// same gap for cameras.
+    public func camQuat(_ i: Int) -> Quat { mat2Quat(camMat(i)) }
 
     /// Generalized accelerations. Allocates; use `withQacc` on the hot path.
     public var qacc: [Double] {
