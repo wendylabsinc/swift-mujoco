@@ -94,7 +94,7 @@ public final class MjModel {
         return i >= 0 ? i : nil
     }
 
-    public struct JointInfo {
+    public struct JointInfo: Sendable {
         public let id: Int
         public let name: String
         public let type: Int
@@ -104,14 +104,14 @@ public final class MjModel {
         public let dofadr: Int
     }
 
-    public struct ActuatorInfo {
+    public struct ActuatorInfo: Sendable {
         public let id: Int
         public let name: String
         public let ctrlLimited: Bool
         public let ctrlRange: (Double, Double)
     }
 
-    public struct SensorInfo {
+    public struct SensorInfo: Sendable {
         public let id: Int
         public let name: String
         public let type: Int
@@ -188,7 +188,7 @@ public final class MjModel {
         (0..<nbody).map { name(of: objBody, id: $0) ?? "" }
     }
 
-    public enum GeomType: String {
+    public enum GeomType: String, Sendable {
         case plane, sphere, capsule, ellipsoid, cylinder, box, mesh, other
     }
 

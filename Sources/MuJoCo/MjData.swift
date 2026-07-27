@@ -94,7 +94,7 @@ public final class MjData {
     }
     public func geomQuat(_ i: Int) -> Quat { mat2Quat(geomXmat(i)) }
 
-    public struct Contact {
+    public struct Contact: Sendable {
         public let geom1: Int, geom2: Int
         public let dist: Double
         public let pos: Vec3

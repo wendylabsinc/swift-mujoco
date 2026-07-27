@@ -21,7 +21,7 @@ public struct Vec3: Equatable, Sendable {
     public static func * (a: Vec3, s: Double) -> Vec3 { Vec3(a.x*s, a.y*s, a.z*s) }
 }
 
-public struct Mat3 {
+public struct Mat3: Equatable, Sendable {
     public let m: [Double]   // 9, row-major
     public init(_ m: [Double]) { precondition(m.count == 9); self.m = m }
     /// Column i of the rotation matrix (e.g. column 2 = body z-axis in world).
@@ -40,7 +40,7 @@ public struct Mat3 {
     }
 }
 
-public struct Quat: Equatable {
+public struct Quat: Equatable, Sendable {
     public var w, x, y, z: Double
     public init(w: Double, x: Double, y: Double, z: Double) { self.w = w; self.x = x; self.y = y; self.z = z }
 }
