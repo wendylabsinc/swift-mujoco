@@ -20,11 +20,26 @@ public final class MjModel {
     /// raw `mjModel`. The library retains ownership of this pointer (it is
     /// freed in `deinit`); callers must NOT free it or hand it to another
     /// wrapper that assumes ownership.
+    ///
+    /// - Warning: `joints`, `actuators`, `sensors` and `bodyNames` are cached
+    ///   on first access (see below). If you mutate model fields through
+    ///   `ptr` after reading one of those — e.g. writing `jnt_range` or
+    ///   `actuator_ctrlrange` in place for runtime domain randomisation — the
+    ///   cached `JointInfo.range` / `ActuatorInfo.ctrlRange` will silently go
+    ///   stale; there is no invalidation. Either avoid those four accessors
+    ///   after mutating through `ptr`, or construct a fresh `MjModel` instead.
     public let ptr: UnsafeMutablePointer<mjModel>
 
     // Introspection is a load-time snapshot: MuJoCo's model topology cannot
     // change without a recompile, and recomputing these O(n) lists on every
     // access showed up as avoidable work in a 200 Hz loop.
+    //
+    // This assumes topology is immutable after compilation, which holds for
+    // MuJoCo's own API — but NOT for a caller writing through the public
+    // `ptr` escape hatch above. Poking `ptr.pointee.jnt_range` or
+    // `actuator_ctrlrange` in place (a common domain-randomisation pattern)
+    // after `joints`/`actuators`/`sensors`/`bodyNames` have already been read
+    // will not be reflected; the cache is never invalidated.
     //
     // `internal`, not `private`, so `@testable import` can assert the cache is
     // actually populated — `private` is invisible even to @testable.
