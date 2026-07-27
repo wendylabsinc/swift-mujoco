@@ -194,6 +194,11 @@ void wmj_gl_destroy(wmj_gl_context *ctx) {
 /* -------------------------------------------------------------- macOS: CGL */
 #elif defined(__APPLE__)
 
+/* Apple deprecated all of OpenGL in favour of Metal, but MuJoCo's classic mjr_*
+   renderer requires a desktop GL context and CGL is the only way to create one
+   on macOS. The deprecation is acknowledged and deliberate — silence it rather
+   than carry 6 warnings on every clean build. */
+#define GL_SILENCE_DEPRECATION 1
 #include <OpenGL/OpenGL.h>
 
 struct wmj_gl_context { CGLContextObj ctx; };

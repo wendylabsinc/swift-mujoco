@@ -13,6 +13,9 @@ let package = Package(
         .systemLibrary(name: "CMuJoCo", path: "Sources/CMuJoCo", pkgConfig: "mujoco"),
         .target(
             name: "CMuJoCoGL",
+            cSettings: [
+                .define("GL_SILENCE_DEPRECATION", to: "1", .when(platforms: [.macOS]))
+            ],
             linkerSettings: [
                 .linkedFramework("OpenGL", .when(platforms: [.macOS]))
             ]
