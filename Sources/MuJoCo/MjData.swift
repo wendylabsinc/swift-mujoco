@@ -38,6 +38,50 @@ public final class MjData {
         for i in 0..<model.nu { ptr.pointee.ctrl[i] = values[i] }
     }
 
+    /// Non-allocating view of `qpos`, valid only for the duration of `body`.
+    /// This is the 200 Hz path; `qpos` allocates a fresh Array on every access.
+    public func withQpos<R>(_ body: (UnsafeBufferPointer<Double>) -> R) -> R {
+        guard let base = ptr.pointee.qpos else { return body(UnsafeBufferPointer(start: nil, count: 0)) }
+        return body(UnsafeBufferPointer(start: base, count: model.nq))
+    }
+
+    /// Non-allocating view of `qvel`, valid only for the duration of `body`.
+    public func withQvel<R>(_ body: (UnsafeBufferPointer<Double>) -> R) -> R {
+        guard let base = ptr.pointee.qvel else { return body(UnsafeBufferPointer(start: nil, count: 0)) }
+        return body(UnsafeBufferPointer(start: base, count: model.nv))
+    }
+
+    /// Non-allocating view of `ctrl`, valid only for the duration of `body`.
+    public func withCtrl<R>(_ body: (UnsafeBufferPointer<Double>) -> R) -> R {
+        guard let base = ptr.pointee.ctrl else { return body(UnsafeBufferPointer(start: nil, count: 0)) }
+        return body(UnsafeBufferPointer(start: base, count: model.nu))
+    }
+
+    /// One generalized position, without copying the whole vector.
+    public func qpos(at i: Int) -> Double {
+        precondition(i >= 0 && i < model.nq)
+        return ptr.pointee.qpos[i]
+    }
+
+    /// One generalized velocity, without copying the whole vector.
+    public func qvel(at i: Int) -> Double {
+        precondition(i >= 0 && i < model.nv)
+        return ptr.pointee.qvel[i]
+    }
+
+    /// Write one generalized position directly. Call `mjForward` afterwards for
+    /// dependent quantities to catch up.
+    public func setQpos(at i: Int, _ value: Double) {
+        precondition(i >= 0 && i < model.nq)
+        ptr.pointee.qpos[i] = value
+    }
+
+    /// Write one generalized velocity directly.
+    public func setQvel(at i: Int, _ value: Double) {
+        precondition(i >= 0 && i < model.nv)
+        ptr.pointee.qvel[i] = value
+    }
+
     public func geomXpos(_ i: Int) -> Vec3 {
         precondition(i >= 0 && i < model.ngeom)
         let b = ptr.pointee.geom_xpos!   // mjtNum*, length ngeom*3

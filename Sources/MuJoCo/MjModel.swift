@@ -22,6 +22,17 @@ public final class MjModel {
     /// wrapper that assumes ownership.
     public let ptr: UnsafeMutablePointer<mjModel>
 
+    // Introspection is a load-time snapshot: MuJoCo's model topology cannot
+    // change without a recompile, and recomputing these O(n) lists on every
+    // access showed up as avoidable work in a 200 Hz loop.
+    //
+    // `internal`, not `private`, so `@testable import` can assert the cache is
+    // actually populated — `private` is invisible even to @testable.
+    var cachedJoints: [JointInfo]?
+    var cachedActuators: [ActuatorInfo]?
+    var cachedSensors: [SensorInfo]?
+    var cachedBodyNames: [String]?
+
     init(owning ptr: UnsafeMutablePointer<mjModel>) { self.ptr = ptr }
     deinit { mj_deleteModel(ptr) }
 
@@ -94,6 +105,13 @@ public final class MjModel {
     }
 
     public var joints: [JointInfo] {
+        if let cachedJoints { return cachedJoints }
+        let v = computeJoints()
+        cachedJoints = v
+        return v
+    }
+
+    private func computeJoints() -> [JointInfo] {
         var result: [JointInfo] = []
         for j in 0..<njnt {
             let nm = name(of: objJoint, id: j) ?? ""
@@ -108,6 +126,13 @@ public final class MjModel {
     }
 
     public var actuators: [ActuatorInfo] {
+        if let cachedActuators { return cachedActuators }
+        let v = computeActuators()
+        cachedActuators = v
+        return v
+    }
+
+    private func computeActuators() -> [ActuatorInfo] {
         var result: [ActuatorInfo] = []
         for a in 0..<nu {
             let nm = name(of: objActuator, id: a) ?? ""
@@ -119,6 +144,13 @@ public final class MjModel {
     }
 
     public var sensors: [SensorInfo] {
+        if let cachedSensors { return cachedSensors }
+        let v = computeSensors()
+        cachedSensors = v
+        return v
+    }
+
+    private func computeSensors() -> [SensorInfo] {
         var result: [SensorInfo] = []
         for s in 0..<nsensor {
             let nm = name(of: objSensor, id: s) ?? ""
@@ -131,6 +163,13 @@ public final class MjModel {
     }
 
     public var bodyNames: [String] {
+        if let cachedBodyNames { return cachedBodyNames }
+        let v = computeBodyNames()
+        cachedBodyNames = v
+        return v
+    }
+
+    private func computeBodyNames() -> [String] {
         (0..<nbody).map { name(of: objBody, id: $0) ?? "" }
     }
 
