@@ -2,6 +2,13 @@ import MuJoCoRLEnv
 
 public struct Go2Observation: ObservationEncoding {
     public let baseAngularVelocity: (Double, Double, Double)
+    /// The base's linear velocity (x, y, z), expressed in the base's own
+    /// local frame (same convention as `baseAngularVelocity` — see
+    /// `Go2Environment.observation()` for how it's rotated out of MuJoCo's
+    /// world-frame `qvel`). Not part of `asArray` — used only for reward
+    /// computation (comparing against `velocityCommand`), the same way
+    /// `baseHeight`/`upright` are used only for fall detection.
+    public let baseLinearVelocity: (Double, Double, Double)
     public let projectedGravity: (Double, Double, Double)
     public let velocityCommand: (vx: Double, vy: Double, wz: Double)
     /// Relative to `Go2Environment.defaultPos`, one per joint in

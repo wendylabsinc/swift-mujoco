@@ -102,6 +102,16 @@ products.append(.executable(name: "mujoco-rl-demo", targets: ["MujocoRLDemo"]))
 targets.append(.target(name: "Go2Kit", dependencies: ["MuJoCo", "WendyMuJoCo", "MuJoCoRLEnv", "RobotKit"], path: "Sources/Go2Kit"))
 targets.append(.testTarget(name: "Go2KitTests", dependencies: ["Go2Kit"]))
 products.append(.library(name: "Go2Kit", targets: ["Go2Kit"]))
+
+targets.append(
+    .executableTarget(
+        name: "Go2LocomotionDemo",
+        dependencies: ["MuJoCoRLEnv", "MLXPolicyTraining", "Go2Kit", "RobotKit",
+                      "WendyMuJoCo", "WorldSimServerCore", "MuJoCo"],
+        path: "Sources/go2-locomotion-demo"
+    )
+)
+products.append(.executable(name: "go2-locomotion-demo", targets: ["Go2LocomotionDemo"]))
 #endif
 
 let package = Package(

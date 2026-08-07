@@ -103,6 +103,13 @@ public final class Go2Environment: Environment {
         self.baseDofAdr = freeJoint.dofadr
     }
 
+    /// Exposes the underlying MuJoCo simulation for callers that need to feed
+    /// a running rollout into `WendyMuJoCo.WorldSimRecorder` (e.g.
+    /// go2-locomotion-demo's inference loop). Read-only — nothing outside
+    /// this type should ever mutate `model`/`data` directly.
+    public var mjModel: MjModel { model }
+    public var mjData: MjData { data }
+
     public var isTerminated: Bool {
         let obs = observation()
         return obs.baseHeight < Self.fallHeightThreshold || obs.upright < Self.fallUprightThreshold
@@ -176,6 +183,19 @@ public final class Go2Environment: Environment {
             data.qvel(at: baseDofAdr + 5)
         )
 
+        // The free joint's linear qvel (dof 0..<3) is world-frame (unlike the
+        // angular part above, which MuJoCo already expresses locally) — see
+        // this file's other qvel comment. Rotate it into the base's local
+        // frame with the same Rᵀ·v transform used for `projectedGravity`
+        // above, so it's directly comparable to `velocityCommand`'s
+        // body-frame vx/vy/wz.
+        let worldLinearVelocity = Vec3(
+            data.qvel(at: baseDofAdr + 0),
+            data.qvel(at: baseDofAdr + 1),
+            data.qvel(at: baseDofAdr + 2)
+        )
+        let localLinearVelocity = quat2Mat(baseQuat).transposeTimes(worldLinearVelocity)
+
         var jointPositions = [Double](repeating: 0, count: 12)
         var jointVelocities = [Double](repeating: 0, count: 12)
         for i in 0..<12 {
@@ -185,6 +205,7 @@ public final class Go2Environment: Environment {
 
         return Go2Observation(
             baseAngularVelocity: angularVelocity,
+            baseLinearVelocity: (localLinearVelocity.x, localLinearVelocity.y, localLinearVelocity.z),
             projectedGravity: (projectedGravity.x, projectedGravity.y, projectedGravity.z),
             velocityCommand: velocityCommand,
             jointPositions: jointPositions,
