@@ -124,13 +124,17 @@ computed by the training harness from `Observation`, not owned by
 `Environment`, since reward is a training-time construct that doesn't exist
 on real hardware).
 
-### 2. `Sources/MLXPolicyTraining/` (macOS-only, alongside the existing
-   `#if os(macOS)` mlx-swift gate)
+### 2. `Sources/MuJoCoRLEnv/PolicyWeights.swift` — generalized in place
+   (stays cross-platform, no MLX — unchanged file location)
 
-**Moved** from `Sources/mujoco-rl-demo/` — `GaussianPolicy.swift`,
-`PPOTrainer.swift`, `ReinforceTrainer.swift`, `GaussianLogProb.swift` — and
-**generalized from scalar to vector actions** in the same move (this is real
-work, not a mechanical copy):
+`PolicyWeights`/`policyForward`/`gaussianLogProb`/`sampleGaussian` are
+deliberately MLX-free today specifically so they're `Sendable` and safe to
+call from parallel `TaskGroup` rollout workers (per the existing doc
+comment). `Rollout.swift`'s generalized `collectEpisode`/`collectBatch`
+(component 3 below) take `PolicyWeights` as a parameter, so it — and
+everything it needs — must stay cross-platform in `MuJoCoRLEnv`, **not**
+move into the macOS-only `MLXPolicyTraining` target below. Generalized from
+scalar to vector actions in place:
 
 - `PolicyWeights`: `w2`/`b2`/`logStd` resized from `[1 × hidden]`/scalar to
   `[actionDimensions × hidden]`/`[actionDimensions]`; gains an
@@ -141,23 +145,37 @@ work, not a mechanical copy):
   sums independent per-dimension log-probs into one joint log-prob (standard
   diagonal-covariance-Gaussian convention for continuous control).
 - `sampleGaussian(mean: [Float], std: [Float], ...) -> [Float]`.
+
+### 3. `Sources/MLXPolicyTraining/` (new library, macOS-only, alongside the
+   existing `#if os(macOS)` mlx-swift gate)
+
+**Moved** from `Sources/mujoco-rl-demo/` — `GaussianPolicy.swift`,
+`PPOTrainer.swift`, `ReinforceTrainer.swift`, `GaussianLogProb.swift` — and
+**generalized from scalar to vector actions** in the same move (real work,
+not a mechanical copy). These four (unlike `PolicyWeights` above) are
+inherently MLX-dependent already, so moving them costs nothing
+cross-platform-wise:
+
 - `GaussianPolicy`: `fc2 = Linear(hiddenDimensions, actionDimensions)`
   (was hardcoded `1`); `logStd: MLXArray` becomes shape `[actionDimensions]`
-  (was a 0-d scalar); gains an `actionDimensions: Int` stored property.
+  (was a 0-d scalar); gains an `actionDimensions: Int` stored property;
+  `snapshot() -> PolicyWeights` carries the new field through.
 - `gaussianLogProbMLX`: sums over the action axis (`.sum(axis: -1,
   keepDims: true)`) instead of relying on an implicit width-1 axis.
 - `PPOTrainer`/`ReinforceTrainer`: `actionsArray` shaped
   `[count, actionDimensions]` instead of `[count, 1]`; otherwise unchanged —
   `gaussianLogProbMLX` already returns the summed joint log-prob per row.
 - `Trajectory.actions: [[Float]]` (was `[Float]`) — one action vector per
-  step.
+  step. (`Trajectory` itself stays in `MuJoCoRLEnv/Rollout.swift` — it's
+  already MLX-free and used by both the cross-platform rollout collector and
+  the MLX trainers.)
 
 `Sources/mujoco-rl-demo/` keeps only its `main.swift` (CartpoleEnv-specific
 CLI), now depending on `MLXPolicyTraining` and constructing
 `GaussianPolicy`/`PPOTrainer`/`ReinforceTrainer` with `actionDimensions: 1` —
 **no behavior change** to the existing cartpole demo.
 
-### 3. `Sources/MuJoCoRLEnv/Rollout.swift` — generalized off `CartpoleEnv`
+### 4. `Sources/MuJoCoRLEnv/Rollout.swift` — generalized off `CartpoleEnv`
 
 Currently hardcodes `CartpoleEnv()` construction and its exact
 `reset()`/`step(action: Float)` shape. Generalized to run against any
@@ -196,7 +214,7 @@ above. This retrofit is both required (so `mujoco-rl-demo` keeps working
 through the generalized `Rollout.swift`) and serves as the validation that
 `Environment` actually fits a second, independent robot.
 
-### 4. `Sources/Go2Kit/` (new library, macOS-only — depends on `MuJoCoRLEnv`'s
+### 5. `Sources/Go2Kit/` (new library, macOS-only — depends on `MuJoCoRLEnv`'s
    `ObservationEncoding` and `RobotKit`'s `Environment`)
 
 ```swift
@@ -234,7 +252,7 @@ literal values from `go2.robot.json` above, not re-derived.
 Model loading reuses `WendyMuJoCo`'s existing `Menagerie.swift` (`"go2"` →
 `"unitree_go2"`) — no new model-fetch code.
 
-### 5. `Sources/go2-locomotion-demo/` (new executable, macOS-only)
+### 6. `Sources/go2-locomotion-demo/` (new executable, macOS-only)
 
 ```swift
 let learn = CommandLine.arguments.contains("--learn")
@@ -351,9 +369,13 @@ polish.
 ## Affected files (summary)
 
 - New: `Sources/RobotKit/Environment.swift` (+ `Tests/RobotKitTests/`)
-- New: `Sources/MLXPolicyTraining/{GaussianPolicy,PPOTrainer,ReinforceTrainer,GaussianLogProb,PolicyWeights}.swift`
-  (moved + generalized from `MuJoCoRLEnv`/`mujoco-rl-demo`)
-  (+ `Tests/MLXPolicyTrainingTests/`)
+- Modify: `Sources/MuJoCoRLEnv/PolicyWeights.swift` (generalized to vector actions, in place — stays cross-platform, does NOT move)
+- New: `Sources/MLXPolicyTraining/{GaussianPolicy,PPOTrainer,ReinforceTrainer,GaussianLogProb}.swift`
+  (moved + generalized from `mujoco-rl-demo`; `PolicyWeights`/`Trajectory` are NOT part of this move — see above)
+- Moved (not duplicated): `Tests/MujocoRLDemoTests/{GaussianPolicyTests,PPOTrainerTests,ReinforceTrainerTests}.swift`
+  → `Tests/MLXPolicyTrainingTests/`, updated to `@testable import MLXPolicyTraining` and
+  `actionDimensions: 1`. `Tests/MujocoRLDemoTests/` and its `Package.swift` test target are
+  removed — `main.swift` has no testable logic of its own once the trainers move out.
 - Modify: `Sources/MuJoCoRLEnv/Rollout.swift` (generalized `collectEpisode`/`collectBatch`)
 - Modify: `Sources/MuJoCoRLEnv/CartpoleEnv.swift` (conform to `RobotKit.Environment`)
 - Modify: `Sources/mujoco-rl-demo/main.swift` (depend on `MLXPolicyTraining`, `actionDimensions: 1`)
