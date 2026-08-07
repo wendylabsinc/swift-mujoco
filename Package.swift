@@ -19,6 +19,8 @@ var targets: [Target] = [
     .testTarget(name: "WendyMuJoCoTests", dependencies: ["WendyMuJoCo", "MuJoCo"]),
     .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo"]),
     .testTarget(name: "MuJoCoRLEnvTests", dependencies: ["MuJoCoRLEnv", "MuJoCo"]),
+    .target(name: "RobotKit", path: "Sources/RobotKit"),
+    .testTarget(name: "RobotKitTests", dependencies: ["RobotKit"]),
     .target(
         name: "WorldSimServerCore",
         dependencies: [
@@ -59,6 +61,7 @@ var products: [Product] = [
     .library(name: "WorldSimServerCore", targets: ["WorldSimServerCore"]),
     .executable(name: "wendy-worldsim-server", targets: ["WendyWorldSimServer"]),
     .executable(name: "mujoco-live-demo", targets: ["MujocoLiveDemo"]),
+    .library(name: "RobotKit", targets: ["RobotKit"]),
 ]
 
 var dependencies: [Package.Dependency] = [
