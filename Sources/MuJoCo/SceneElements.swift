@@ -95,6 +95,10 @@ private func cJointType(_ t: JointKind) -> mjtJoint {
 /// A hinge, slide, or ball joint. `range`, when non-nil, sets both the
 /// joint's limits and marks it as limited; when nil, the joint is
 /// unlimited (MuJoCo's own default for a freshly added joint).
+///
+/// The `range` parameter is specified in **degrees**, following MJCF's default
+/// `compiler angle="degree"` convention; MuJoCo's compiler automatically converts
+/// it to radians during model compilation.
 public struct Joint: MjSceneElement {
     public let name: String?
     public let type: JointKind

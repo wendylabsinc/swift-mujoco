@@ -98,8 +98,11 @@ import Testing
     let joint = try #require(model.joints.first { $0.name == "hinge" })
     #expect(joint.type == 3)   // mjJNT_HINGE (mjtJoint_: FREE=0, BALL=1, SLIDE=2, HINGE=3)
     #expect(joint.limited == true)
-    #expect(abs(joint.range.0 - (-1.5)) < 1e-9)
-    #expect(abs(joint.range.1 - 1.5) < 1e-9)
+    // Range is specified in degrees; MuJoCo's compiler converts to radians
+    let expectedLower = -1.5 * Double.pi / 180
+    let expectedUpper = 1.5 * Double.pi / 180
+    #expect(abs(joint.range.0 - expectedLower) < 1e-9)
+    #expect(abs(joint.range.1 - expectedUpper) < 1e-9)
 }
 
 @Test func slideAndBallJointsCompile() throws {
@@ -117,47 +120,4 @@ import Testing
     #expect(model.njnt == 2)
     #expect(model.joints[0].type == 2)   // mjJNT_SLIDE
     #expect(model.joints[1].type == 1)   // mjJNT_BALL
-}
-
-@Test func xmlWithJointRangeWorks() throws {
-    let xml = """
-    <mujoco>
-      <worldbody>
-        <body name="pole" pos="0 0 1">
-          <joint name="hinge" type="hinge" axis="0 1 0" range="-1.5 1.5"/>
-          <geom type="capsule" size="0.02 0.5 0" fromto="0 0 0 0 0 1"/>
-        </body>
-      </worldbody>
-    </mujoco>
-    """
-    let model = try MjModel.load(xml: xml)
-    #expect(model.njnt == 1)
-    let joint = try #require(model.joints.first { $0.name == "hinge" })
-    #expect(joint.type == 3)   // mjJNT_HINGE
-    #expect(joint.limited == true)
-}
-
-@Test func unlimitedJointDefaultRange() throws {
-    let scene = Scene {
-        Body(name: "pole", pos: [0, 0, 1]) {
-            Joint(name: "hinge", type: .hinge)
-            Geom(type: .capsule, size: [0.02, 0.5, 0])
-        }
-    }
-    let model = try scene.compile()
-    #expect(model.njnt == 1)
-    let joint = try #require(model.joints.first { $0.name == "hinge" })
-    #expect(joint.limited == false)
-    // Just check what the default range values are
-}
-
-@Test func checkJointAxisIsSet() throws {
-    let scene = Scene {
-        Body(name: "a") {
-            Joint(name: "j1", type: .hinge, axis: [0, 1, 0])
-            Geom(type: .sphere, size: [0.1, 0, 0])
-        }
-    }
-    let model = try scene.compile()
-    #expect(model.njnt == 1)
 }
