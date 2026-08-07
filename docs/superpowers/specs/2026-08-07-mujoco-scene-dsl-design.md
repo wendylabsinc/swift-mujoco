@@ -72,34 +72,57 @@ New files inside the existing `MuJoCo` SPM target (no new target/product) —
 this module already depends on `CMuJoCo` and already has the raw pointer
 plumbing pattern established in `MjSpec.swift`.
 
-A single protocol drives composition:
+A single protocol drives composition — but its signature must not put raw
+`Unsafe*` pointer types in public API. `Span`/`RawSpan` don't fit as a
+substitute: they're non-escaping, lifetime-bound views over a *sequence* of
+contiguous elements (the safe replacement for `UnsafeBufferPointer`), whereas
+`mjSpec*`/`mjsBody*` here are single opaque C struct handles that must persist
+and get threaded through the whole recursive tree-walk — exactly the
+"escapes its borrow scope" usage Span exists to forbid. (There is no existing
+`Span` usage anywhere in this codebase to follow, either.)
+
+Instead, the pointer is hidden behind an opaque handle type whose only
+stored property is `internal` (default access), so it never appears as an
+`Unsafe*` type in any public signature:
 
 ```swift
+/// Opaque handle to a body inside a scene under construction. Produced by
+/// `Scene`'s root and by `Body.apply`; not constructible outside `MuJoCo`.
+public struct MjSpecBody {
+    let ptr: UnsafeMutablePointer<mjsBody>   // internal — never appears in public API
+}
+
 public protocol MjSceneElement {
-    func apply(spec: UnsafeMutablePointer<mjSpec>, parent: UnsafeMutablePointer<mjsBody>)
+    func apply(spec: MjSpec, parent: MjSpecBody)
 }
 ```
 
 `MjSceneElement` must be `public` so `Body`/`Geom`/etc. (all `public struct`s
 conforming to it) are nameable as `[MjSceneElement]` from the builder
-closures in another target's code (e.g. `mujoco-live-demo`). Its `apply`
-requirement is therefore public too — Swift ties a protocol requirement's
-access level to the protocol's — which surfaces the raw `mjSpec`/`mjsBody` C
-types in public API. That's consistent with `MjSpec.ptr` already being a
-public escape hatch onto the same C layer, not a new exposure this design
-introduces.
+closures in another target's code (e.g. `mujoco-live-demo`); `MjSpecBody`
+must be public for the same reason (`apply`'s parameter type must be at
+least as accessible as `apply` itself). Neither exposes anything unsafe: from
+outside `MuJoCo`, `MjSpecBody` is a token you can pass around but not
+construct, inspect, or dereference. One consequence: `MjSceneElement`
+conformances are effectively sealed to `MuJoCo` itself (a third party holding
+an opaque `MjSpecBody` has nothing to call on it) — acceptable, since nothing
+in this design calls for external conformances; the element set below is a
+fixed, closed list.
 
-`Body.apply` calls `mjs_addBody(parent, nil)`, sets name/pos/quat on the
-result, then calls `apply` on each of its own children with that new body as
-`parent` — so nesting `Body { Body { ... } }` recurses naturally, no name-based
-lookup required anywhere in the tree (unlike `MjSpec.addGeom`, which resolves
-its parent by name via `mjs_findBody`; the DSL always has the real pointer in
-hand from the recursion itself). Leaf elements (`Geom`, `Joint`, `FreeJoint`,
-`Site`, `Camera`, `Light`) call their matching `mjs_add*` on `parent` and
-ignore `spec`. `Option` ignores `parent` and mutates
-`spec.pointee.option.timestep` directly (mirrors the existing
-`g!.pointee.type = ...` direct-field-write pattern already used throughout
-`MjSpec.swift`).
+`Scene` obtains the initial handle via `mjs_findBody(spec.ptr, "world")`,
+wrapped as `MjSpecBody(ptr:)`. `Body.apply` calls `mjs_addBody(parent.ptr, nil)`,
+sets name/pos/quat on the result, wraps it as a new `MjSpecBody`, and calls
+`apply` on each of its own children with that as `parent` — so nesting
+`Body { Body { ... } }` recurses naturally, no name-based lookup required
+anywhere in the tree (unlike `MjSpec.addGeom`, which resolves its parent by
+name via `mjs_findBody`; the DSL always has the real pointer in hand from the
+recursion itself). Leaf elements (`Geom`, `Joint`, `FreeJoint`, `Site`,
+`Camera`, `Light`) call their matching `mjs_add*` on `parent.ptr` and ignore
+`spec`. `Option` ignores `parent` and mutates `spec.ptr.pointee.option.timestep`
+directly (mirrors the existing `g!.pointee.type = ...` direct-field-write
+pattern already used throughout `MjSpec.swift`) — this one call site does
+reach through `MjSpec.ptr`, which is `MjSpec`'s own pre-existing public
+escape hatch, not a new exposure this design introduces.
 
 A result builder combines elements the SwiftUI way:
 
