@@ -121,3 +121,36 @@ import Testing
     #expect(model.joints[0].type == 2)   // mjJNT_SLIDE
     #expect(model.joints[1].type == 1)   // mjJNT_BALL
 }
+
+@Test func siteCameraAndLightAppearInCompiledModel() throws {
+    let scene = Scene {
+        Body(name: "head", pos: [0, 0, 1]) {
+            Geom(type: .sphere, size: [0.1, 0, 0])
+            Site(name: "imu", pos: [0, 0, 0.05])
+            Camera(name: "eye", pos: [0.1, 0, 0], fovy: 60)
+        }
+        Light(pos: [0, 0, 3])
+    }
+    let model = try scene.compile()
+
+    #expect(model.nsite == 1)
+    #expect(model.ncam == 1)
+    #expect(model.nlight == 1)
+    #expect(model.id(of: objSite, name: "imu") != nil)
+    #expect(model.id(of: objCamera, name: "eye") != nil)
+    #expect(abs(model.camFovy(0) - 60) < 1e-9)
+}
+
+@Test func siteAndCameraUseDocumentedDefaults() throws {
+    let scene = Scene {
+        Body(name: "b") {
+            Geom(type: .box, size: [0.1, 0.1, 0.1])
+            Site()
+            Camera()
+        }
+    }
+    let model = try scene.compile()
+    #expect(model.nsite == 1)
+    #expect(model.ncam == 1)
+    #expect(abs(model.camFovy(0) - 45) < 1e-9)
+}

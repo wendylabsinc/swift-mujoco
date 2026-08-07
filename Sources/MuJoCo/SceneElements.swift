@@ -136,3 +136,72 @@ public struct Joint: MjSceneElement {
         }
     }
 }
+
+/// A site — where IMUs, rangefinders, and touch sensors mount.
+public struct Site: MjSceneElement {
+    public let name: String?
+    public let pos: [Double]
+    public let size: Double
+
+    public init(name: String? = nil, pos: [Double] = [0, 0, 0], size: Double = 0.01) {
+        self.name = name
+        self.pos = pos
+        self.size = size
+    }
+
+    public func apply(spec: MjSpec, parent: MjSpecBody) {
+        precondition(pos.count == 3, "Site: pos needs 3 components, got \(pos.count)")
+        guard let s = mjs_addSite(parent.ptr, nil) else {
+            preconditionFailure("Site.apply: mjs_addSite returned NULL")
+        }
+        if let name { _ = mjs_setName(s.pointee.element, name) }
+        s.pointee.pos = (pos[0], pos[1], pos[2])
+        s.pointee.size = (size, size, size)
+    }
+}
+
+/// A fixed camera.
+public struct Camera: MjSceneElement {
+    public let name: String?
+    public let pos: [Double]
+    public let fovy: Double
+
+    public init(name: String? = nil, pos: [Double] = [0, 0, 0], fovy: Double = 45) {
+        self.name = name
+        self.pos = pos
+        self.fovy = fovy
+    }
+
+    public func apply(spec: MjSpec, parent: MjSpecBody) {
+        precondition(pos.count == 3, "Camera: pos needs 3 components, got \(pos.count)")
+        guard let c = mjs_addCamera(parent.ptr, nil) else {
+            preconditionFailure("Camera.apply: mjs_addCamera returned NULL")
+        }
+        if let name { _ = mjs_setName(c.pointee.element, name) }
+        c.pointee.pos = (pos[0], pos[1], pos[2])
+        c.pointee.fovy = fovy
+    }
+}
+
+/// A light. `MjSpec`'s own initializer already adds a default light to a
+/// scene built with `light: true`; `Scene` always builds with `light: false`
+/// (see `Scene.spec()`), so use this element for any light a scene needs.
+public struct Light: MjSceneElement {
+    public let pos: [Double]?
+
+    public init(pos: [Double]? = nil) {
+        self.pos = pos
+    }
+
+    public func apply(spec: MjSpec, parent: MjSpecBody) {
+        if let pos {
+            precondition(pos.count == 3, "Light: pos needs 3 components, got \(pos.count)")
+        }
+        guard let l = mjs_addLight(parent.ptr, nil) else {
+            preconditionFailure("Light.apply: mjs_addLight returned NULL")
+        }
+        if let pos {
+            l.pointee.pos = (pos[0], pos[1], pos[2])
+        }
+    }
+}

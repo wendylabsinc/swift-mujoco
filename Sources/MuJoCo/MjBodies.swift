@@ -3,6 +3,7 @@ import CMuJoCo
 extension MjModel {
     public var nsite: Int { Int(ptr.pointee.nsite) }
     public var ncam: Int { Int(ptr.pointee.ncam) }
+    public var nlight: Int { Int(ptr.pointee.nlight) }
 }
 
 extension MjData {
