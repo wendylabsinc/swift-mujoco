@@ -98,6 +98,10 @@ targets.append(
 )
 products.append(.library(name: "MLXPolicyTraining", targets: ["MLXPolicyTraining"]))
 products.append(.executable(name: "mujoco-rl-demo", targets: ["MujocoRLDemo"]))
+
+targets.append(.target(name: "Go2Kit", dependencies: ["MuJoCo", "WendyMuJoCo", "MuJoCoRLEnv", "RobotKit"], path: "Sources/Go2Kit"))
+targets.append(.testTarget(name: "Go2KitTests", dependencies: ["Go2Kit"]))
+products.append(.library(name: "Go2Kit", targets: ["Go2Kit"]))
 #endif
 
 let package = Package(
