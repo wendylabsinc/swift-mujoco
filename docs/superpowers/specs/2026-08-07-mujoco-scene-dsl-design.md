@@ -151,14 +151,21 @@ it just walks once at compile time.
   geom and light on top of whatever the scene itself declares — then calls
   `apply` on every top-level element against the world body
   (`mjs_findBody(spec.ptr, "world")`).
-  - `func spec() throws -> MjSpec` — the primary output. Returns the live,
-    still-editable spec (so a future Phase 2 can `attach()` more robots onto
-    it, same as any other `MjSpec`).
+  - `func spec() -> MjSpec` — the primary output. Non-throwing: it only ever
+    looks up the world body on a freshly built bare spec, which `mj_makeSpec`
+    guarantees always exists. Returns the live, still-editable spec (so a
+    future Phase 2 can `attach()` more robots onto it, same as any other
+    `MjSpec`).
   - `func compile() throws -> MjModel` — `spec().compile()`.
   - `func xml() throws -> String` — `spec().saveXML()`, for debugging/parity
     checks against hand-written MJCF.
 - **`Option(timestep: Double)`**
-- **`Body(name: String? = nil, pos: [Double] = [0, 0, 0], quat: [Double]? = nil, @MjSceneBuilder children: () -> [MjSceneElement] = { [] })`**
+- **`Body(name: String? = nil, pos: [Double] = [0, 0, 0], quat: [Double]? = nil, @MjSceneBuilder children: () -> [MjSceneElement] = { })`**
+  — the default's empty closure body (zero statements, not `{ [] }`) is
+  deliberate: a result-builder closure with an empty body resolves to a
+  zero-argument `buildBlock()` call; `{ [] }` would instead route the array
+  literal through `buildExpression(_: MjSceneElement)`, which doesn't
+  type-check against an array.
 - **`Geom(name: String? = nil, type: MjModel.GeomType, size: [Double], pos: [Double] = [0, 0, 0], rgba: [Double] = [0.5, 0.5, 0.5, 1])`**
   — reuses `MjModel.GeomType`, already public; no new geom-type enum.
 - **`FreeJoint(name: String? = nil)`** — `mjs_addFreeJoint(parent)`.
