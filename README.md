@@ -22,9 +22,9 @@ declared platform floor to satisfy every dependency's minimum, so
 ## Build & test
     export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
     swift build
-    swift test --skip MujocoRLDemoTests
+    swift test --skip MLXPolicyTrainingTests
 
-`MujocoRLDemoTests` needs Xcode's build system — see
+`MLXPolicyTrainingTests` needs Xcode's build system — see
 [RL sample (MLX-Swift)](#rl-sample-mlx-swift) below.
 
 ## What's here
@@ -93,8 +93,8 @@ gradient step — action sampling during rollout is a hand-rolled Swift
 forward pass over a plain snapshot of the policy weights, in
 `Sources/MuJoCoRLEnv/`.
 
-`MujocoRLDemoTests` (the tests covering the MLX-dependent pieces) can't run
+`MLXPolicyTrainingTests` (the tests covering the MLX-dependent pieces) can't run
 under plain `swift test` for the same reason — verify them locally with
 `xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'`.
-CI runs `swift test --skip MujocoRLDemoTests` and never executes this
+CI runs `swift test --skip MLXPolicyTrainingTests` and never executes this
 target's tests.
