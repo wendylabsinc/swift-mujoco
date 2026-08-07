@@ -880,25 +880,23 @@ import Testing
 
 @testable import RobotKitGo2
 
-@Test func crc32CoreMatchesReferenceForKnownWords() {
-    // Derived by hand-executing the reference crc32_core (poly 0x04C11DB7,
-    // init 0xFFFFFFFF, MSB-first, no final XOR) on a single zero word:
-    // every iteration shifts left and conditionally XORs, giving a value
-    // that is stable across all three Unitree reference implementations.
-    let single = UnitreeCRC.crc32Core([0])
-    let twice = UnitreeCRC.crc32Core([0, 0])
-    // Distinct inputs must give distinct digests, and neither may be trivial.
-    #expect(single != 0)
-    #expect(twice != single)
-    #expect(twice != 0xFFFF_FFFF)
+@Test func crc32CoreMatchesReferenceVectors() {
+    // Golden values produced by executing the verbatim reference algorithm
+    // (unitree_sdk2's crc32_core: poly 0x04C11DB7, init 0xFFFFFFFF, MSB-first,
+    // non-reflected, no final XOR). These pin the algorithm exactly — a
+    // standard CRC-32 implementation produces different values for all four.
+    #expect(UnitreeCRC.crc32Core([0]) == 0xC704_DD7B)
+    #expect(UnitreeCRC.crc32Core([0, 0]) == 0x6904_BB59)
+    #expect(UnitreeCRC.crc32Core([0x1234_5678, 0x9ABC_DEF0]) == 0x7D24_A31B)
+    // Word order matters: the same words swapped give a different digest.
+    #expect(UnitreeCRC.crc32Core([0x9ABC_DEF0, 0x1234_5678]) == 0x44E8_FA0F)
 }
 
-@Test func crc32CoreIsDeterministicAndOrderSensitive() {
-    let a = UnitreeCRC.crc32Core([0x1234_5678, 0x9ABC_DEF0])
-    let b = UnitreeCRC.crc32Core([0x1234_5678, 0x9ABC_DEF0])
-    let swapped = UnitreeCRC.crc32Core([0x9ABC_DEF0, 0x1234_5678])
-    #expect(a == b)
-    #expect(a != swapped)
+@Test func crcOfAnAllZeroLowCmdMatchesTheReference() {
+    // The full 812-byte packed struct, entirely zeroed, run through the
+    // reference implementation. Verifies the packing and the 202-word count
+    // together, not just the digest function.
+    #expect(UnitreeCRC.crc(for: LowCmd()) == 0x4B5A_4880)
 }
 
 @Test func packedLowCmdIsExactly812Bytes() {
@@ -1198,6 +1196,18 @@ import Testing
     // Mode 0x01 = servo/position-velocity-torque control on each used motor.
     #expect(cmd.motorCmd[0].mode == 0x01)
     #expect(cmd.motorCmd[12].mode == 0x00)
+}
+
+@Test func adapterProducesTheReferenceCRCForAKnownCommand() {
+    // Golden value from the reference algorithm over the exact bytes this
+    // adapter must emit: head FE EF, levelFlag FF, mode 1 on slots 0..11,
+    // every float zero, slots 12..19 untouched. If the header bytes, the
+    // mode, the slot count, or the packed layout drift, this fails.
+    let cmd = Go2Adapter().lowCmd(
+        from: RobotCommand(
+            stamp: RobotTime(nanoseconds: 0),
+            joints: [JointTarget](repeating: JointTarget(position: 0), count: 12)))
+    #expect(cmd.crc == 0xA5B1_D12B)
 }
 ```
 
