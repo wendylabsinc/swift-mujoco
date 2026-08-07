@@ -86,4 +86,9 @@ jobs:
           PKG_CONFIG_PATH: /Users/runner/.local/lib/pkgconfig
         run: |
           swift build -v
+          # MujocoRLDemoTests exercises mlx-swift, which can't execute under a
+          # plain SwiftPM CLI build — only xcodebuild compiles the Metal
+          # shaders it needs at runtime. That target is verified locally via
+          # `xcodebuild test` instead (see README's "RL sample (MLX-Swift)"
+          # section) and never runs in CI.
           swift test -v --skip MujocoRLDemoTests

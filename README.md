@@ -13,10 +13,19 @@ a `mujoco` wheel available (e.g. Python 3.14) — use a Python 3.12 environment 
 This installs headers/lib into `$HOME/.local` (no `sudo` required) and writes
 `$HOME/.local/lib/pkgconfig/mujoco.pc`.
 
+Requires macOS 14+ on Apple platforms: `mlx-swift` (used only by the
+`MujocoRLDemo` target) needs macOS 14, and SwiftPM requires the package's
+declared platform floor to satisfy every dependency's minimum, so
+`Package.swift` declares `.macOS(.v14)` package-wide even though the
+`MuJoCo`/`WendyMuJoCo` libraries themselves don't need it.
+
 ## Build & test
     export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
     swift build
-    swift test
+    swift test --skip MujocoRLDemoTests
+
+`MujocoRLDemoTests` needs Xcode's build system — see
+[RL sample (MLX-Swift)](#rl-sample-mlx-swift) below.
 
 ## What's here
 
@@ -72,6 +81,7 @@ its GL stack fails the build instead of silently skipping the render tests.
 (see [mlx-swift's README](https://github.com/ml-explore/mlx-swift#readme)).
 Build and run it via `xcodebuild` instead:
 
+    export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
     xcodebuild build -scheme mujoco-rl-demo -destination 'platform=macOS' -derivedDataPath .build-xcode
     .build-xcode/Build/Products/Debug/mujoco-rl-demo reinforce   # or: ppo
 
