@@ -91,10 +91,15 @@ returning a value type or taking caller storage does not.
 `Vec3`/`Quat`/`Mat3` arithmetic is `@inlinable`, so it inlines into consumer code
 rather than crossing a module boundary per operation.
 
-`Mat3` stores nine scalars rather than an `InlineArray` because `InlineArray` is
-`@available(macOS 26, *)` and this package targets macOS 14 — adopting it would
-force the deployment floor forward. The layout is identical; swap the storage if
-that floor ever moves.
+`Mat3` stores its nine doubles in an `InlineArray` (`[9 of Double]`) — fixed-size,
+no indirection, no refcount. `InlineArray` is `@available(macOS 26, *)`, which is
+why the package declares `platforms: [.macOS(.v26)]`; **Linux is unaffected**, since
+`platforms:` only constrains Apple platforms, and Linux is where this actually
+deploys. CI's macOS job therefore needs a `macos-26` runner or newer.
+
+Two `InlineArray` quirks that surface in the API: it is not a `Collection` (index
+`m` directly, or use `Mat3.span`/`Mat3.array`) and it has no `Equatable`
+conformance, so `Mat3.==` is written out rather than synthesised.
 
 ### `Span` accessors are experimental
 

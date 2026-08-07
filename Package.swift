@@ -106,7 +106,7 @@ products.append(.executable(name: "mujoco-rl-demo", targets: ["MujocoRLDemo"]))
 
 let package = Package(
     name: "swift-mujoco",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     products: products,
     dependencies: dependencies,
     targets: targets

@@ -67,7 +67,11 @@ jobs:
 
   macos:
     name: macOS
-    runs-on: macos-15
+    # Must be >= the package's deployment target. Package.swift declares
+    # .macOS(.v26) so that Mat3 can store its nine doubles in an InlineArray, which
+    # is @available(macOS 26, *) — a macos-15 runner cannot execute the built tests.
+    # The Linux jobs are unaffected: `platforms:` only constrains Apple platforms.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 

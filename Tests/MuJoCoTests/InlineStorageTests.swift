@@ -70,13 +70,25 @@ import CMuJoCo
     }
 }
 
-@Test func mat3EqualityIsSynthesised() {
+@Test func mat3EqualityComparesAllNineElements() {
+    // Written out by hand because InlineArray has no Equatable conformance, so
+    // this needs to actually check every position rather than trusting synthesis.
     let a = Mat3([1, 2, 3, 4, 5, 6, 7, 8, 9])
-    let b = Mat3([1, 2, 3, 4, 5, 6, 7, 8, 9])
-    var c = a
-    c.m11 = 99
-    #expect(a == b)
-    #expect(a != c)
+    #expect(a == Mat3([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+    for i in 0..<9 {
+        var perturbed = [1.0, 2, 3, 4, 5, 6, 7, 8, 9]
+        perturbed[i] = 99
+        #expect(a != Mat3(perturbed), "element \(i) must participate in ==")
+    }
+}
+
+@Test func mat3SpanExposesTheInlineStorage() {
+    let a = Mat3([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    let s = a.span
+    #expect(s.count == 9)
+    var seen: [Double] = []
+    for i in s.indices { seen.append(s[i]) }
+    #expect(seen == a.array)
 }
 
 @Test func mat3RoundTripsThroughArrayAndBuffer() {

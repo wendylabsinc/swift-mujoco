@@ -42,34 +42,29 @@ public struct Vec3: Equatable, Sendable {
     public static func * (a: Vec3, s: Double) -> Vec3 { Vec3(a.x*s, a.y*s, a.z*s) }
 }
 
-/// A row-major 3x3 rotation matrix, stored **inline**.
+/// A row-major 3x3 rotation matrix, stored **inline** in an `InlineArray`.
 ///
-/// Storage is nine scalars, not a `[Double]`: a rotation matrix is a fixed-size
-/// nine doubles, and boxing that on the heap for every orientation read was pure
-/// overhead on a per-geom-per-frame path.
+/// A rotation matrix is a fixed-size nine doubles. Storing it in a `[Double]` put
+/// it on the heap and cost an allocation for every orientation read, on a
+/// per-geom-per-frame path; `InlineArray` gives fixed-size storage with no
+/// indirection and no refcount.
 ///
-/// `InlineArray` would express this more directly, but it is annotated
-/// `@available(macOS 26, *)` — adopting it would force this package's deployment
-/// floor from macOS 14 to macOS 26, which is a platform decision rather than a
-/// storage one. Nine stored scalars give exactly the same inline layout with no
-/// availability constraint, a synthesised `Equatable`, and none of `InlineArray`'s
-/// missing-`Collection` friction. Swap the storage to `[9 of Double]` if the floor
-/// ever moves.
-///
-/// Elements are reachable positionally via ``subscript(_:)`` (flat, row-major) and
-/// ``subscript(row:col:)``. `array` is the `[Double]` escape hatch.
+/// Two consequences of `InlineArray` worth knowing, both handled here:
+/// it is **not a `Collection`** (no `map`/`reduce`/`for…in` over ``m`` — index it,
+/// or use ``span``/``array``), and it does **not conform to `Equatable`**, so `==`
+/// is written out below rather than synthesised.
 public struct Mat3: Equatable, Sendable {
-    public var m00, m01, m02: Double
-    public var m10, m11, m12: Double
-    public var m20, m21, m22: Double
+    /// Row-major, 9 elements. Indexable but not a `Collection`.
+    public let m: [9 of Double]
+
+    @inlinable
+    public init(_ m: [9 of Double]) { self.m = m }
 
     @inlinable
     public init(m00: Double, m01: Double, m02: Double,
                 m10: Double, m11: Double, m12: Double,
                 m20: Double, m21: Double, m22: Double) {
-        self.m00 = m00; self.m01 = m01; self.m02 = m02
-        self.m10 = m10; self.m11 = m11; self.m12 = m12
-        self.m20 = m20; self.m21 = m21; self.m22 = m22
+        self.m = [m00, m01, m02, m10, m11, m12, m20, m21, m22]
     }
 
     /// Convenience for callers holding a `[Double]`; traps unless it has exactly
@@ -77,9 +72,7 @@ public struct Mat3: Equatable, Sendable {
     @inlinable
     public init(_ m: [Double]) {
         precondition(m.count == 9, "Mat3: expected 9 elements, got \(m.count)")
-        self.init(m00: m[0], m01: m[1], m02: m[2],
-                  m10: m[3], m11: m[4], m12: m[5],
-                  m20: m[6], m21: m[7], m22: m[8])
+        self.init([9 of Double] { m[$0] })
     }
 
     /// Build from a borrowed buffer without going through `[Double]` — the path
@@ -87,61 +80,61 @@ public struct Mat3: Equatable, Sendable {
     @inlinable
     public init(_ m: UnsafeBufferPointer<Double>) {
         precondition(m.count == 9, "Mat3: expected 9 elements, got \(m.count)")
-        self.init(m00: m[0], m01: m[1], m02: m[2],
-                  m10: m[3], m11: m[4], m12: m[5],
-                  m20: m[6], m21: m[7], m22: m[8])
+        self.init([9 of Double] { m[$0] })
     }
 
     /// Flat row-major element access, matching MuJoCo's `xmat` layout.
     @inlinable
-    public subscript(i: Int) -> Double {
-        switch i {
-        case 0: return m00
-        case 1: return m01
-        case 2: return m02
-        case 3: return m10
-        case 4: return m11
-        case 5: return m12
-        case 6: return m20
-        case 7: return m21
-        case 8: return m22
-        default: preconditionFailure("Mat3: index \(i) out of range 0..<9")
-        }
-    }
+    public subscript(i: Int) -> Double { m[i] }
 
     /// Row/column element access.
     @inlinable
     public subscript(row row: Int, col col: Int) -> Double {
         precondition(row >= 0 && row < 3 && col >= 0 && col < 3,
                      "Mat3: (\(row),\(col)) out of range")
-        return self[row * 3 + col]
+        return m[row * 3 + col]
+    }
+
+    /// Borrowed view of the nine elements, for code that wants to iterate without
+    /// copying. `InlineArray` is not a `Collection`, but its `Span` gives you
+    /// `indices` and a subscript.
+    @inlinable
+    public var span: Span<Double> {
+        @_lifetime(borrow self) get { m.span }
     }
 
     /// Heap-allocating escape hatch for `[Double]`-shaped APIs and diagnostics.
     @inlinable
-    public var array: [Double] { [m00, m01, m02, m10, m11, m12, m20, m21, m22] }
+    public var array: [Double] { [m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]] }
 
     /// Column i of the rotation matrix (e.g. column 2 = body z-axis in world).
     @inlinable
     public func column(_ i: Int) -> Vec3 {
         precondition(i >= 0 && i < 3, "Mat3.column: \(i) out of range")
-        return Vec3(self[i], self[3+i], self[6+i])
+        return Vec3(m[i], m[3+i], m[6+i])
     }
 
     /// Rᵀ · v  (world vector into body frame).
     @inlinable
     public func transposeTimes(_ v: Vec3) -> Vec3 {
-        Vec3(m00*v.x + m10*v.y + m20*v.z,
-             m01*v.x + m11*v.y + m21*v.z,
-             m02*v.x + m12*v.y + m22*v.z)
+        Vec3(m[0]*v.x + m[3]*v.y + m[6]*v.z,
+             m[1]*v.x + m[4]*v.y + m[7]*v.z,
+             m[2]*v.x + m[5]*v.y + m[8]*v.z)
     }
 
     /// Multiply this matrix (row-major) by a column vector: `M · v`.
     @inlinable
     public func times(_ v: Vec3) -> Vec3 {
-        Vec3(m00*v.x + m01*v.y + m02*v.z,
-             m10*v.x + m11*v.y + m12*v.z,
-             m20*v.x + m21*v.y + m22*v.z)
+        Vec3(m[0]*v.x + m[1]*v.y + m[2]*v.z,
+             m[3]*v.x + m[4]*v.y + m[5]*v.z,
+             m[6]*v.x + m[7]*v.y + m[8]*v.z)
+    }
+
+    /// Written out because `InlineArray` has no `Equatable` conformance.
+    @inlinable
+    public static func == (a: Mat3, b: Mat3) -> Bool {
+        for i in 0..<9 where a.m[i] != b.m[i] { return false }
+        return true
     }
 }
 
