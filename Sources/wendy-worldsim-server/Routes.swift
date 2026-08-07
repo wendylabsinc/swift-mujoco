@@ -9,6 +9,7 @@ import NIOCore
 func makeRouter(root: URL, heartbeatSeconds: TimeInterval = 5) -> Router<BasicRequestContext> {
     let router = Router()
     let titleCache = SceneTitleCache()
+    let focusTracker = FocusTracker()
 
     router.get("/ctl/sim-running") { _, _ -> SimRunningResponse in
         let slots = liveSlots(root: root, heartbeatSeconds: heartbeatSeconds, now: Date())
@@ -20,7 +21,8 @@ func makeRouter(root: URL, heartbeatSeconds: TimeInterval = 5) -> Router<BasicRe
             // (slot:file:title:). See Task 4's report for why (CodeGenerator.swift sorts unconditionally).
             running.append(RunningSim(file: slot.name, slot: slot.name, title: title))
         }
-        return SimRunningResponse(focus: slots.first?.name, running: running)
+        let focus = await focusTracker.resolve(liveNames: slots.map(\.name))
+        return SimRunningResponse(focus: focus, running: running)
     }
 
     router.get("/ctl/sim-list") { _, _ -> SimListResponse in

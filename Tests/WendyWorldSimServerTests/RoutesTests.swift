@@ -31,6 +31,43 @@ private func withTempRoot(_ body: (URL) async throws -> Void) async throws {
     }
 }
 
+private func makeLiveSlot(_ root: URL, name: String) throws {
+    let dir = root.appendingPathComponent(name, isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: dir.appendingPathComponent("state.json"))
+}
+
+@Test func simRunningFocusIsStickyAcrossPolls() async throws {
+    try await withTempRoot { root in
+        try makeLiveSlot(root, name: "aaa")
+        try makeLiveSlot(root, name: "bbb")
+
+        // Same Application/router instance across both calls — this is what actually proves
+        // the FocusTracker actor's state persists across requests, rather than trivially
+        // "passing" because each call got a fresh tracker.
+        let app = Application(router: makeRouter(root: root))
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/ctl/sim-running", method: .get) { response in
+                let body = try JSONDecoder().decode(SimRunningResponse.self, from: Data(buffer: response.body))
+                #expect(body.focus == "aaa")   // alphabetically first among live slots
+            }
+
+            // Second poll with the same live set: focus must not bounce slot-to-slot.
+            try await client.execute(uri: "/ctl/sim-running", method: .get) { response in
+                let body = try JSONDecoder().decode(SimRunningResponse.self, from: Data(buffer: response.body))
+                #expect(body.focus == "aaa")
+            }
+
+            // "aaa" goes away (directory removed) — focus should re-pick to the remaining live slot.
+            try FileManager.default.removeItem(at: root.appendingPathComponent("aaa"))
+            try await client.execute(uri: "/ctl/sim-running", method: .get) { response in
+                let body = try JSONDecoder().decode(SimRunningResponse.self, from: Data(buffer: response.body))
+                #expect(body.focus == "bbb")
+            }
+        }
+    }
+}
+
 @Test func simRunningIsEmptyWithNoSlots() async throws {
     try await withTempRoot { root in
         let app = Application(router: makeRouter(root: root))

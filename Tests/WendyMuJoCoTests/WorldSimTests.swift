@@ -37,6 +37,14 @@ import Foundation
     #expect(WorldSim.slot(["WENDY_WORLDSIM_SLOT": ""]) == "default")
 }
 
+@Test func slotRejectsPathSeparators() {
+    #expect(WorldSim.slot(["WENDY_WORLDSIM_SLOT": "a/b"]) == "default")
+}
+
+@Test func slotRejectsDotDot() {
+    #expect(WorldSim.slot(["WENDY_WORLDSIM_SLOT": ".."]) == "default")
+}
+
 @Test func slotDirectoryNestsSlotUnderDirectory() {
     let expected = WorldSim.directory().appendingPathComponent(WorldSim.slot(), isDirectory: true)
     #expect(WorldSim.slotDirectory().path == expected.path)

@@ -11,12 +11,15 @@ public enum WorldSim {
 
     /// The slot name for this process: $WENDY_WORLDSIM_SLOT, or "default". Multiple
     /// swift-mujoco processes can run concurrently, each in its own slot, so
-    /// wendy-worldsim-server can discover and serve them independently.
+    /// wendy-worldsim-server can discover and serve them independently. Rejects values that
+    /// aren't a single path segment (empty, ".", "..", or containing "/") — those can't
+    /// actually be served: wendy-worldsim-server's slot scan is single-level and its route
+    /// path is a fixed 3 components, so a slot like "a/b" or ".." would silently never be
+    /// discovered or reachable.
     public static func slot(_ env: [String: String] = ProcessInfo.processInfo.environment) -> String {
-        if let v = env["WENDY_WORLDSIM_SLOT"], !v.isEmpty {
-            return v
-        }
-        return "default"
+        guard let v = env["WENDY_WORLDSIM_SLOT"], !v.isEmpty, v != ".", v != "..", !v.contains("/")
+        else { return "default" }
+        return v
     }
 
     /// This process's slot directory: `directory()/slot()`. Every WorldSim write for a

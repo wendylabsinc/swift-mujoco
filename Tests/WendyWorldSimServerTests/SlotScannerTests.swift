@@ -28,12 +28,14 @@ private func withTempRoot(_ body: (URL) throws -> Void) throws {
     }
 }
 
-@Test func liveSlotsOrdersNewestFirst() throws {
+@Test func liveSlotsOrdersByNameAscending() throws {
     try withTempRoot { root in
-        try makeSlot(root, name: "older", stateAge: 3)
-        try makeSlot(root, name: "newer", stateAge: 1)
+        // "zzz" has a fresher mtime than "aaa", but the result must still be alphabetical —
+        // ordering is by name, not by write timing, so the `running` list is stable across polls.
+        try makeSlot(root, name: "aaa", stateAge: 3)
+        try makeSlot(root, name: "zzz", stateAge: 1)
         let slots = liveSlots(root: root, heartbeatSeconds: 5, now: Date())
-        #expect(slots.map(\.name) == ["newer", "older"])
+        #expect(slots.map(\.name) == ["aaa", "zzz"])
     }
 }
 
@@ -68,4 +70,24 @@ private func withTempRoot(_ body: (URL) throws -> Void) throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("title-\(UUID().uuidString)")
     let cache = SceneTitleCache()
     #expect(await cache.title(forSlot: "s", in: dir) == nil)
+}
+
+@Test func sceneTitleCacheInvalidatesWhenSceneJsonChanges() async throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("title-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let sceneFile = dir.appendingPathComponent("scene.json")
+
+    try Data(#"{"title":"A"}"#.utf8).write(to: sceneFile)
+    let cache = SceneTitleCache()
+    let first = await cache.title(forSlot: "s", in: dir)
+    #expect(first == "A")
+
+    // Overwrite with different content and explicitly bump the mtime forward so the test
+    // isn't racing real clock resolution (a same-instant overwrite could keep the same mtime).
+    try Data(#"{"title":"B"}"#.utf8).write(to: sceneFile)
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)],
+                                          ofItemAtPath: sceneFile.path)
+    let second = await cache.title(forSlot: "s", in: dir)
+    #expect(second == "B")
 }
