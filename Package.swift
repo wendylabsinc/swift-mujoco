@@ -17,7 +17,7 @@ var targets: [Target] = [
     .testTarget(name: "MuJoCoTests", dependencies: ["MuJoCo"]),
     .target(name: "WendyMuJoCo", dependencies: ["MuJoCo", "CMuJoCo"]),
     .testTarget(name: "WendyMuJoCoTests", dependencies: ["WendyMuJoCo", "MuJoCo"]),
-    .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo"]),
+    .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo", "RobotKit"]),
     .testTarget(name: "MuJoCoRLEnvTests", dependencies: ["MuJoCoRLEnv", "MuJoCo"]),
     .target(name: "RobotKit", path: "Sources/RobotKit"),
     .testTarget(name: "RobotKitTests", dependencies: ["RobotKit"]),

@@ -14,34 +14,29 @@ import Testing
 @Test func zeroActionKeepsPoleUprightBriefly() {
     let env = CartpoleEnv()
     _ = env.reset()
-    let (obs, reward, done) = env.step(action: 0)
-    #expect(reward == 1.0)
-    #expect(done == false)
+    let obs = env.act([0])
+    #expect(env.isTerminated == false)
     #expect(abs(obs.poleAngle) < 0.05)
 }
 
 @Test func sustainedLargeActionEventuallyTerminates() {
     let env = CartpoleEnv()
     _ = env.reset()
-    var done = false
     var steps = 0
-    while !done && steps < CartpoleEnv.maxSteps {
-        let (_, _, isDone) = env.step(action: 1.0)
-        done = isDone
+    while !env.isTerminated && steps < CartpoleEnv.maxSteps {
+        _ = env.act([1.0])
         steps += 1
     }
-    #expect(done == true)
+    #expect(env.isTerminated == true)
     #expect(steps < CartpoleEnv.maxSteps)
 }
 
 @Test func episodeTerminatesAtMaxStepsUnderZeroAction() {
     let env = CartpoleEnv()
     _ = env.reset()
-    var done = false
     var steps = 0
-    while !done {
-        let (_, _, isDone) = env.step(action: 0)
-        done = isDone
+    while !env.isTerminated {
+        _ = env.act([0])
         steps += 1
     }
     #expect(steps == CartpoleEnv.maxSteps)
