@@ -1,6 +1,7 @@
 import Foundation
 import Hummingbird
 import WendyMuJoCo
+import WorldSimServerCore
 
 @main
 struct WendyWorldSimServer {

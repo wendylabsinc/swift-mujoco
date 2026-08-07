@@ -3,7 +3,7 @@ import Foundation
 import Hummingbird
 import HummingbirdTesting
 import NIOFoundationCompat
-@testable import WendyWorldSimServer
+@testable import WorldSimServerCore
 
 private func withTempRoot(_ body: (URL) async throws -> Void) async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("routes-\(UUID().uuidString)")

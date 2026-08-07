@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import WendyWorldSimServer
+@testable import WorldSimServerCore
 
 private func makeSlot(_ root: URL, name: String, stateAge: TimeInterval,
                       fileManager: FileManager = .default) throws {

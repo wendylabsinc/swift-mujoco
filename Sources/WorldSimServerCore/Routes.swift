@@ -6,7 +6,7 @@ import NIOCore
 /// shape the desktop-native Sim tab's `LiveSimClient` already speaks (see
 /// wendy-sandbox/docs/superpowers/specs/2026-08-06-local-swift-mujoco-sim-bridge-design.md),
 /// backed by `root`'s slot directories instead of a session container.
-func makeRouter(root: URL, heartbeatSeconds: TimeInterval = 5) -> Router<BasicRequestContext> {
+public func makeRouter(root: URL, heartbeatSeconds: TimeInterval = 5) -> Router<BasicRequestContext> {
     let router = Router()
     let titleCache = SceneTitleCache()
     let focusTracker = FocusTracker()

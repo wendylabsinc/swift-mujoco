@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import WendyWorldSimServer
+@testable import WorldSimServerCore
 
 @Test func simRunningResponseRoundTripsThroughJSON() throws {
     // NOTE: argument order here is alphabetical (file, slot, title / focus, running), not the

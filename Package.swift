@@ -19,24 +19,36 @@ var targets: [Target] = [
     .testTarget(name: "WendyMuJoCoTests", dependencies: ["WendyMuJoCo", "MuJoCo"]),
     .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo"]),
     .testTarget(name: "MuJoCoRLEnvTests", dependencies: ["MuJoCoRLEnv", "MuJoCo"]),
-    .executableTarget(
-        name: "WendyWorldSimServer",
+    .target(
+        name: "WorldSimServerCore",
         dependencies: [
             "WendyMuJoCo",
             .product(name: "Hummingbird", package: "hummingbird"),
             .product(name: "NIOCore", package: "swift-nio"),
         ],
-        path: "Sources/wendy-worldsim-server",
+        path: "Sources/WorldSimServerCore",
         plugins: [.plugin(name: "JSONSchemaPlugin", package: "swift-json-schema")]
+    ),
+    .executableTarget(
+        name: "WendyWorldSimServer",
+        dependencies: ["WendyMuJoCo", "WorldSimServerCore",
+                      .product(name: "Hummingbird", package: "hummingbird")],
+        path: "Sources/wendy-worldsim-server"
     ),
     .testTarget(
         name: "WendyWorldSimServerTests",
         dependencies: [
-            "WendyWorldSimServer",
+            "WorldSimServerCore",
             .product(name: "HummingbirdTesting", package: "hummingbird"),
             .product(name: "NIOCore", package: "swift-nio"),
             .product(name: "NIOFoundationCompat", package: "swift-nio"),
         ]
+    ),
+    .executableTarget(
+        name: "MujocoLiveDemo",
+        dependencies: ["MuJoCo", "WendyMuJoCo", "WorldSimServerCore",
+                      .product(name: "Hummingbird", package: "hummingbird")],
+        path: "Sources/mujoco-live-demo"
     ),
 ]
 
@@ -44,7 +56,9 @@ var products: [Product] = [
     .library(name: "MuJoCo", targets: ["MuJoCo"]),
     .executable(name: "mujoco-demo", targets: ["MujocoDemo"]),
     .library(name: "WendyMuJoCo", targets: ["WendyMuJoCo"]),
+    .library(name: "WorldSimServerCore", targets: ["WorldSimServerCore"]),
     .executable(name: "wendy-worldsim-server", targets: ["WendyWorldSimServer"]),
+    .executable(name: "mujoco-live-demo", targets: ["MujocoLiveDemo"]),
 ]
 
 var dependencies: [Package.Dependency] = [
