@@ -806,13 +806,16 @@ func makeRouter(root: URL, heartbeatSeconds: TimeInterval = 5) -> Router<BasicRe
         var running: [RunningSim] = []
         for slot in slots {
             let title = await titleCache.title(forSlot: slot.name, in: root.appendingPathComponent(slot.name))
-            running.append(RunningSim(slot: slot.name, file: slot.name, title: title))
+            // swift-json-schema generates memberwise inits with parameters sorted alphabetically
+            // by JSON key, not schema-declaration order — RunningSim(file:slot:title:) here, not
+            // (slot:file:title:). See Task 4's report for why (CodeGenerator.swift sorts unconditionally).
+            running.append(RunningSim(file: slot.name, slot: slot.name, title: title))
         }
-        return SimRunningResponse(running: running, focus: slots.first?.name)
+        return SimRunningResponse(focus: slots.first?.name, running: running)
     }
 
     router.get("/ctl/sim-list") { _, _ -> SimListResponse in
-        SimListResponse(sims: [], current: nil)
+        SimListResponse(current: nil, sims: [])
     }
 
     router.get("/simslot/{slot}/scene.json") { _, context in
@@ -827,15 +830,15 @@ func makeRouter(root: URL, heartbeatSeconds: TimeInterval = 5) -> Router<BasicRe
     // and there's no control channel back into a running process yet for stop/pause/step/reset.
     router.post("/ctl/sim-open") { _, _ -> EditedResponse<SimControlResponse> in
         EditedResponse(status: HTTPResponse.Status(code: 501),
-                      response: SimControlResponse(ok: false, control: nil))
+                      response: SimControlResponse(control: nil, ok: false))
     }
 
     router.post("/ctl/sim-stop") { _, _ -> SimControlResponse in
-        SimControlResponse(ok: true, control: nil)
+        SimControlResponse(control: nil, ok: true)
     }
 
     router.post("/ctl/sim-cmd") { _, _ -> SimControlResponse in
-        SimControlResponse(ok: true, control: SimControl(paused: nil, step: nil, reset: nil))
+        SimControlResponse(control: SimControl(paused: nil, reset: nil, step: nil), ok: true)
     }
 
     return router
@@ -896,5 +899,6 @@ git commit -m "feat: implement wendy-worldsim-server's HTTP routes"
 
 - **Spec coverage:** slot convention (Task 1), `WorldSimRecorder` (Task 2), `mujoco-demo` wiring (Task 3), server scaffold + schema types (Task 4), slot discovery + title cache (Task 5), routes incl. the documented no-op POSTs and 404/heartbeat edge cases (Task 6) — all covered. WebSocket push and real pause/step/reset control are explicitly out of scope per the design's Future Work section; no task implements them.
 - **Placeholder scan:** none — every step has literal code, exact file paths, and exact run commands.
-- **Type consistency:** `RunningSim(slot:file:title:)`, `SimRunningResponse(running:focus:)`, `SimListResponse(sims:current:)`, `SimControl(paused:step:reset:)`, `SimControlResponse(ok:control:)` are used identically across Tasks 4, 5, and 6. `WorldSimRecorder(dir:)` / `.record(model:data:title:frame:hud:level:)` matches between Task 2's implementation and Task 3's call site.
+- **Type consistency:** `RunningSim(file:slot:title:)`, `SimRunningResponse(focus:running:)`, `SimListResponse(current:sims:)`, `SimControl(paused:reset:step:)`, `SimControlResponse(control:ok:)` are used identically across Tasks 4 and 6 (updated post-Task-4 to the codegen's actual alphabetical-by-key argument order — see the note below). `WorldSimRecorder(dir:)` / `.record(model:data:title:frame:hud:level:)` matches between Task 2's implementation and Task 3's call site.
+- **Post-Task-4 correction:** Task 4's implementation discovered that `swift-json-schema`'s codegen sorts every struct's fields — and therefore its synthesized memberwise-init parameter order — alphabetically by JSON key, unconditionally, regardless of schema-declaration order (confirmed in `CodeGenerator.swift` for both 0.1.0 and 0.2.0; no schema keyword controls it). Task 6's `Routes.swift` code above was corrected to the actual generated order; Task 4's own already-executed code (not shown again here) made the same correction live in its commit. Any future re-execution of this plan should expect alphabetical order, not the declaration order a schema author might assume.
 - **Dependency fix caught on review:** Task 6's `Routes.swift` (`ByteBuffer`) and `RoutesTests.swift` (`Data(buffer:)`) reference NIO symbols that Hummingbird only provides *transitively* — SPM requires the package that owns them to be declared explicitly. Task 4 now adds `swift-nio` as a top-level dependency and `NIOCore`/`NIOFoundationCompat` as explicit product dependencies on `WendyWorldSimServer`/`WendyWorldSimServerTests`, rather than assuming Hummingbird re-exports them.
