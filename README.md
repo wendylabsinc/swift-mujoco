@@ -76,21 +76,39 @@ its GL stack fails the build instead of silently skipping the render tests.
 
 ## RL sample (MLX-Swift)
 
-`mlx-swift` can't execute at runtime under plain `swift build`/`swift run`
+The RL demo target is **opt-in**, behind `MUJOCO_RL_DEMO=1`. It is not gated on
+`#if os(macOS)`, because a manifest's `#if os(...)` describes the machine running
+SwiftPM rather than the build target — so on a Mac cross-compiling for Linux
+ARM64 (what `wendy run` does when building a Swift app for a device) that branch
+was true and dragged Metal-only `mlx-swift` into a Linux build graph. Without the
+variable, `MujocoRLDemo`, `MujocoRLDemoTests` and the `mlx-swift` dependency are
+absent from the package entirely.
+
+Because the dependency is conditional, `Package.resolved` only carries pins for
+the default (RL-demo-off) configuration. Building with `MUJOCO_RL_DEMO=1` adds
+`mlx-swift` pins locally — **don't commit that diff**; it gets pruned again by the
+next default build. `mlx-swift` is pinned `exact:` in `Package.swift` so the
+opt-in build stays reproducible without them.
+
+`mlx-swift` also can't execute at runtime under plain `swift build`/`swift run`
 — SwiftPM's command-line build can't compile the Metal shaders it needs
 (see [mlx-swift's README](https://github.com/ml-explore/mlx-swift#readme)).
 Build and run it via `xcodebuild` instead:
 
     export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
+    export MUJOCO_RL_DEMO=1
     xcodebuild build -scheme mujoco-rl-demo -destination 'platform=macOS' -derivedDataPath .build-xcode
     .build-xcode/Build/Products/Debug/mujoco-rl-demo reinforce   # or: ppo
 
 Trains a Gaussian policy to balance a cartpole. Rollout collection runs
-`CartpoleEnv` episodes in parallel across a `TaskGroup`, each worker with
-its own `MjModel`/`MjData` pair (`MjModel`/`MjData` are not `Sendable` and
-must never be shared across threads). MLX is only used for the actual
-gradient step — action sampling during rollout is a hand-rolled Swift
-forward pass over a plain snapshot of the policy weights, in
+`CartpoleEnv` episodes in parallel across a `TaskGroup`. Each worker owns its own
+`MjData`; the compiled `MjModel` is shared process-wide, because compiling it per
+episode (which writes and re-parses a temp MJCF file) cost more than the physics
+it was setting up. Sharing is sound because `mj_step` takes `mjModel` as `const`
+— but `MjModel`'s lazy introspection caches are mutable, so they are pre-warmed
+on a single thread before the model is published and only ever read afterwards.
+MLX is only used for the actual gradient step — action sampling during rollout is
+a hand-rolled Swift forward pass over a plain snapshot of the policy weights, in
 `Sources/MuJoCoRLEnv/`.
 
 `MujocoRLDemoTests` (the tests covering the MLX-dependent pieces) can't run

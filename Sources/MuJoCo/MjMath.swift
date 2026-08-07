@@ -8,7 +8,10 @@ import Darwin
 public struct Vec3: Equatable, Sendable {
     public var x, y, z: Double
     public init(_ x: Double, _ y: Double, _ z: Double) { self.x = x; self.y = y; self.z = z }
-    public init(_ a: [Double]) { self.init(a[0], a[1], a[2]) }
+    public init(_ a: [Double]) {
+        precondition(a.count == 3, "Vec3: expected 3 components, got \(a.count)")
+        self.init(a[0], a[1], a[2])
+    }
     public var array: [Double] { [x, y, z] }
     public var norm: Double { (x*x + y*y + z*z).squareRoot() }
     public var normalized: Vec3 { let n = norm; return n > 0 ? self * (1/n) : self }
@@ -47,11 +50,20 @@ public struct Quat: Equatable, Sendable {
 
 public func mat2Quat(_ mat: [Double]) -> Quat {
     precondition(mat.count == 9)
-    var q = [Double](repeating: 0, count: 4)
-    mat.withUnsafeBufferPointer { mp in
-        mju_mat2Quat(&q, mp.baseAddress)
+    return mat.withUnsafeBufferPointer { mat2Quat($0) }
+}
+
+/// Row-major 3x3 rotation matrix to quaternion, reading straight from a borrowed
+/// buffer. The allocation-free counterpart of ``mat2Quat(_:)-[Double]`` for
+/// per-frame loops; pair it with `MjData.withGeomXmat`/`withXmat`.
+public func mat2Quat(_ mat: UnsafeBufferPointer<Double>) -> Quat {
+    precondition(mat.count == 9)
+    var q = (0.0, 0.0, 0.0, 0.0)
+    withUnsafeMutablePointer(to: &q) { qp in
+        mju_mat2Quat(UnsafeMutableRawPointer(qp).assumingMemoryBound(to: Double.self),
+                     mat.baseAddress)
     }
-    return Quat(w: q[0], x: q[1], y: q[2], z: q[3])   // MuJoCo order wxyz
+    return Quat(w: q.0, x: q.1, y: q.2, z: q.3)   // MuJoCo order wxyz
 }
 
 public func quat2Mat(_ q: Quat) -> Mat3 {
@@ -83,21 +95,76 @@ public func mulQuat(_ a: Quat, _ b: Quat) -> Quat {
 }
 
 /// Conjugate, which for a unit quaternion is the inverse rotation.
+///
+/// This is the Swift equivalent of C's `mju_negQuat`, which — despite the name —
+/// conjugates rather than negating. `conjQuat` is a spelling that says so.
 public func invQuat(_ q: Quat) -> Quat { Quat(w: q.w, x: -q.x, y: -q.y, z: -q.z) }
+
+/// Conjugate. Alias for ``invQuat(_:)``, named to match what `mju_negQuat`
+/// actually computes so ported C/Python code reads the same in Swift.
+public func conjQuat(_ q: Quat) -> Quat { invQuat(q) }
 
 /// Negate every component. Represents the *same* rotation as `q`; useful for
 /// picking the sign with a non-negative w when comparing orientations.
-public func negQuat(_ q: Quat) -> Quat { Quat(w: -q.w, x: -q.x, y: -q.y, z: -q.z) }
+///
+/// - Important: This is NOT `mju_negQuat`, which conjugates — see ``conjQuat(_:)``.
+public func flipQuatSign(_ q: Quat) -> Quat { Quat(w: -q.w, x: -q.x, y: -q.y, z: -q.z) }
+
+@available(*, deprecated, message: """
+    negQuat is ambiguous: it negates all four components, whereas C's mju_negQuat \
+    conjugates. Use flipQuatSign(_:) for the four-component negation, or \
+    conjQuat(_:)/invQuat(_:) for the mju_negQuat equivalent.
+    """)
+public func negQuat(_ q: Quat) -> Quat { flipQuatSign(q) }
 
 /// Rotate a vector by a quaternion.
+///
+/// Delegates to `mju_rotVecQuat` rather than materialising a 3x3 matrix: the
+/// matrix route allocated three heap arrays per call (`quat2Mat`'s output, its
+/// input copy, and `Mat3.m`), which is not acceptable on a control loop.
 public func rotVecQuat(_ v: Vec3, _ q: Quat) -> Vec3 {
-    quat2Mat(q).times(v)
+    var res = (0.0, 0.0, 0.0)
+    var vec = (v.x, v.y, v.z)
+    var qq = (q.w, q.x, q.y, q.z)
+    withUnsafeMutablePointer(to: &res) { rp in
+        withUnsafeMutablePointer(to: &vec) { vp in
+            withUnsafeMutablePointer(to: &qq) { qp in
+                mju_rotVecQuat(
+                    UnsafeMutableRawPointer(rp).assumingMemoryBound(to: Double.self),
+                    UnsafeRawPointer(vp).assumingMemoryBound(to: Double.self),
+                    UnsafeRawPointer(qp).assumingMemoryBound(to: Double.self))
+            }
+        }
+    }
+    return Vec3(res.0, res.1, res.2)
 }
 
-/// The rotation taking `b` to `a`, expressed as axis * angle (a rotation vector).
+/// The rotation from `b` to `a` expressed as axis * angle (a rotation vector) in
+/// **`b`'s local frame** — the same convention as C's `mju_subQuat(res, a, b)`,
+/// which computes `conj(b) ⊗ a`.
+///
+/// - Important: This changed in the review fixes. It previously computed
+///   `a ⊗ conj(b)`, a *world*-frame difference, while carrying the name of a
+///   MuJoCo function with the opposite convention — so an orientation error fed
+///   to a body-frame controller came out rotated. If you want the old behaviour
+///   explicitly, call ``subQuatWorld(_:_:)``.
 public func subQuat(_ a: Quat, _ b: Quat) -> Vec3 {
-    var d = mulQuat(a, invQuat(b)).normalized
-    if d.w < 0 { d = negQuat(d) }          // shortest arc
+    quatToRotationVector(mulQuat(invQuat(b), a))
+}
+
+/// The rotation from `b` to `a` expressed in the **world** frame (`a ⊗ conj(b)`).
+///
+/// The mirror of ``subQuat(_:_:)``, which works in `b`'s local frame. Both
+/// return the same magnitude; they differ in the frame the axis is expressed in.
+public func subQuatWorld(_ a: Quat, _ b: Quat) -> Vec3 {
+    quatToRotationVector(mulQuat(a, invQuat(b)))
+}
+
+/// Convert a rotation quaternion to a rotation vector (axis * angle), taking the
+/// shortest arc. Equivalent to `mju_quat2Vel(res, q, 1)`.
+public func quatToRotationVector(_ q: Quat) -> Vec3 {
+    var d = q.normalized
+    if d.w < 0 { d = flipQuatSign(d) }     // shortest arc
     let sinHalf = (d.x*d.x + d.y*d.y + d.z*d.z).squareRoot()
     guard sinHalf > 1e-15 else { return Vec3(0, 0, 0) }
     let angle = 2 * atan2(sinHalf, d.w)

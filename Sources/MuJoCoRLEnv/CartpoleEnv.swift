@@ -14,19 +14,67 @@ struct CartpoleObservation {
 /// Cart-on-a-rail with an unactuated pole, balanced by a continuous force on
 /// the cart. Not `Sendable` (it owns `MjModel`/`MjData`, neither of which
 /// is) — each parallel rollout worker in `collectEpisode` constructs its own
-/// instance rather than sharing one across tasks.
+/// instance rather than sharing one across tasks. The per-worker state is the
+/// `MjData`; the compiled `MjModel` is shared process-wide (see `sharedModel`).
+///
+/// Wrapper that lets one compiled `MjModel` be shared across rollout tasks.
+/// `MjModel` is deliberately not `Sendable` because its lazy introspection
+/// caches are mutable; `CartpoleEnv.sharedModel` pre-warms those on a single
+/// thread before publishing the model, after which it is only ever read, and
+/// `mj_step`/`mj_forward` take `mjModel` as `const`.
+private final class SharedModel: @unchecked Sendable {
+    let model: MjModel
+    init(_ model: MjModel) { self.model = model }
+}
+
 final class CartpoleEnv {
     static let maxSteps = 500
     static let cartPositionLimit: Double = 2.4
     // 12 degrees, matching the classic cartpole task's failure threshold.
     static let poleAngleLimit: Double = 0.2094395102393195
 
+    /// The compiled cartpole model, built once for the whole process.
+    ///
+    /// Compiling per env meant `MjModel.load(xml:)` wrote a UUID-named temp file,
+    /// ran `mj_loadXML`, and deleted it — *per episode*. A 200-iteration,
+    /// 16-episode-per-batch run did that 3,200 times to simulate 500 steps each;
+    /// model compilation dominated the actual physics.
+    ///
+    /// Sharing is safe because `mjModel` is read-only during stepping (`mj_step`
+    /// takes it `const`) — but `MjModel`'s introspection accessors populate lazy
+    /// caches on first read, which *would* race across rollout tasks. So the
+    /// caches are pre-warmed here, on one thread, before any env can see the
+    /// model; after this initializer the object is effectively immutable.
+    private static let sharedModel: SharedModel = {
+        let m: MjModel
+        do {
+            m = try MjModel.load(xml: CartpoleEnv.xml)
+        } catch {
+            // The MJCF is a compile-time constant in this file, so this is a
+            // programmer error, not a runtime condition — but say which one.
+            preconditionFailure("CartpoleEnv's built-in MJCF failed to compile: \(error)")
+        }
+        _ = m.joints
+        _ = m.actuators
+        _ = m.sensors
+        _ = m.bodyNames
+        return SharedModel(m)
+    }()
+
+    /// Escape hatch for tests to assert envs really do share one compiled model.
+    static var sharedModelForTesting: MjModel { sharedModel.model }
+
     private let model: MjModel
     private let data: MjData
     private var stepCount = 0
 
+    /// Test-only accessors, so the sharing contract (one model, many datas) can be
+    /// asserted by identity rather than inferred from timing.
+    var modelForTesting: MjModel { model }
+    var dataForTesting: MjData { data }
+
     init() {
-        self.model = try! MjModel.load(xml: Self.xml)
+        self.model = Self.sharedModel.model
         self.data = MjData(model)
     }
 

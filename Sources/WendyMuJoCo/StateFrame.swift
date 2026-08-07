@@ -26,6 +26,12 @@ public struct StateFrame: Encodable {
 /// mjData -> per-frame poses (every geom) + bounded contacts.
 public func buildState(_ model: MjModel, _ data: MjData, frame: Int,
                        hud: [String: HUDValue], level: Int?, now: Double) -> StateFrame {
+    // One inner Array per geom is inherent to `pose`'s public `[[Double]]` shape
+    // (and to the JSON the Sim tab parses), so it stays. What used to sit on top
+    // of it does not: `geomQuat` no longer round-trips through `[Double]`/`Mat3`
+    // (three more allocations per geom) and `mjRound` no longer calls `pow` seven
+    // times per geom. Together with `Handle`'s publish throttle this is the
+    // difference between ~2k allocations per step at 200 Hz and ~ngeom at 30 Hz.
     var pose: [[Double]] = []
     pose.reserveCapacity(model.ngeom)
     for i in 0..<model.ngeom {

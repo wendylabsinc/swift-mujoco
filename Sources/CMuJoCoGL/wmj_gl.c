@@ -4,12 +4,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char g_err[512] = {0};
+/* Thread-local, not process-global: wmj_gl_create can run concurrently (two
+   MjOffscreenRenderers on different threads, or MjOffscreenRenderer.isAvailable
+   probing next to a live renderer, or the test suite running contexts in
+   parallel — see the note in wmj_gl_destroy). With one shared buffer, two
+   simultaneous failures raced on it and the Swift side, which reads the message
+   after the fact via wmj_gl_last_error(), could report the *other* thread's
+   error. Each thread now keeps its own last-error. */
+static _Thread_local char g_err[512] = {0};
 
 static void set_err(const char *fmt, const char *detail) {
     snprintf(g_err, sizeof(g_err), fmt, detail ? detail : "");
 }
 
+/* Returns this thread's last error. The pointer is valid until the next failing
+   call on the same thread; copy it if you need to keep it. */
 const char *wmj_gl_last_error(void) { return g_err; }
 
 /* ------------------------------------------------------------------ Linux: EGL */

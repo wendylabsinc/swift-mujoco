@@ -179,7 +179,19 @@ public final class MjRayBatch {
 /// Directions are generated **elevation-major, azimuth-minor**: all rays of the
 /// lowest elevation ring first, sweeping azimuth, then the next ring up. The
 /// pattern is constant for the life of a run, so it is computed once in `init`.
+///
+/// Both axes are **centred on 0 and endpoint-inclusive** for a partial span: a
+/// 90°-azimuth pattern sweeps -45°…+45° about +x, with rays at both ends. A span
+/// of a full turn (2π, within `fullTurnTolerance`) is treated as wrapping, so
+/// azimuth becomes endpoint-*exclusive* — otherwise the first and last ray of
+/// every ring would be duplicates. Elevation is always inclusive; a single
+/// elevation ring sits at 0.
 public struct LidarPattern: Sendable {
+    /// How close `azimuthSpanRadians` must be to 2π to count as a wrapping full
+    /// turn. Generous enough to absorb a caller passing 359.9° or a degrees→radians
+    /// rounding error, tight enough not to swallow a real 350° sector.
+    public static let fullTurnTolerance: Double = 1e-3
+
     public let azimuthCount: Int
     public let elevationCount: Int
     public let azimuthSpanRadians: Double
@@ -196,6 +208,25 @@ public struct LidarPattern: Sendable {
         self.azimuthSpanRadians = azimuthSpanRadians
         self.elevationSpanRadians = elevationSpanRadians
 
+        // A full turn wraps, so the last ray would coincide with the first:
+        // divide by count (exclusive) and start at 0. A partial sector does not
+        // wrap, so it is centred on +x and includes both endpoints — matching
+        // how elevation has always behaved. Getting this wrong made a 90° sector
+        // sweep 0°…+88° to one side instead of -45°…+45°.
+        let wraps = abs(azimuthSpanRadians.magnitude - 2 * .pi) <= Self.fullTurnTolerance
+        let azStep: Double
+        let azStart: Double
+        if wraps {
+            azStep = azimuthSpanRadians / Double(azimuthCount)
+            azStart = 0
+        } else if azimuthCount == 1 {
+            azStep = 0
+            azStart = 0
+        } else {
+            azStep = azimuthSpanRadians / Double(azimuthCount - 1)
+            azStart = -azimuthSpanRadians / 2
+        }
+
         var out = [Vec3]()
         out.reserveCapacity(azimuthCount * elevationCount)
         for e in 0..<elevationCount {
@@ -205,7 +236,7 @@ public struct LidarPattern: Sendable {
                 : -elevationSpanRadians/2 + elevationSpanRadians * Double(e) / Double(elevationCount - 1)
             let ce = cos(elev), se = sin(elev)
             for a in 0..<azimuthCount {
-                let az = azimuthSpanRadians * Double(a) / Double(azimuthCount)
+                let az = azStart + azStep * Double(a)
                 out.append(Vec3(ce * cos(az), ce * sin(az), se))
             }
         }
