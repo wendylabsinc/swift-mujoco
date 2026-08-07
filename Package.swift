@@ -33,7 +33,11 @@ var targets: [Target] = [
     .testTarget(name: "WendyMuJoCoTests", dependencies: ["WendyMuJoCo", "MuJoCo"]),
     .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo", "RobotKit"]),
     .testTarget(name: "MuJoCoRLEnvTests", dependencies: ["MuJoCoRLEnv", "MuJoCo"]),
-    .target(name: "RobotKit", path: "Sources/RobotKit"),
+    .target(
+        name: "RobotKit",
+        dependencies: [.product(name: "SwiftROS2", package: "swift-ros2")],
+        path: "Sources/RobotKit"
+    ),
     .testTarget(name: "RobotKitTests", dependencies: ["RobotKit"]),
     .target(
         name: "WorldSimServerCore",
@@ -85,6 +89,7 @@ var dependencies: [Package.Dependency] = [
     // SPM requires a package to be listed here to use its products, even though Hummingbird
     // already depends on it transitively.
     .package(url: "https://github.com/apple/swift-nio.git", from: "2.60.0"),
+    .package(url: "https://github.com/youtalk/swift-ros2", from: "1.3.0"),
 ]
 
 // The MLX-backed RL demo is opt-in via `MUJOCO_RL_DEMO=1`, NOT `#if os(macOS)`.
