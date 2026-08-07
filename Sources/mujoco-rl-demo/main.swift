@@ -28,6 +28,20 @@ case "reinforce":
         let loss = trainer.trainStep(trajectories: trajectories)
         print("iter \(iteration): mean return \(meanReturn(trajectories))  (loss \(loss))")
     }
+case "ppo":
+    let trainer = PPOTrainer(
+        observationDimensions: observationDimensions, hiddenDimensions: hiddenDimensions,
+        policyLearningRate: 3e-3, valueLearningRate: 1e-2, gamma: gamma, clipEpsilon: 0.2, epochs: 4
+    )
+    print("Training PPO on cartpole balance (\(iterations) iterations, \(episodesPerBatch) episodes/batch)")
+    for iteration in 0..<iterations {
+        let weights = trainer.policy.snapshot()
+        let trajectories = await collectBatch(
+            weights: weights, episodeCount: episodesPerBatch, baseSeed: UInt64(iteration) &* 1_000_003
+        )
+        let (policyLoss, valueLoss) = trainer.trainStep(trajectories: trajectories)
+        print("iter \(iteration): mean return \(meanReturn(trajectories))  (policy loss \(policyLoss), value loss \(valueLoss))")
+    }
 default:
     print("Unknown algorithm '\(algorithm)'. Usage: mujoco-rl-demo [reinforce|ppo]")
 }
