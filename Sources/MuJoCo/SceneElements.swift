@@ -96,14 +96,19 @@ private func cJointType(_ t: JointKind) -> mjtJoint {
 /// joint's limits and marks it as limited; when nil, the joint is
 /// unlimited (MuJoCo's own default for a freshly added joint).
 ///
-/// The `range` parameter is specified in **degrees**, following MJCF's default
-/// `compiler angle="degree"` convention; MuJoCo's compiler automatically converts
-/// it to radians during model compilation.
+/// For `.hinge` and `.ball`, `range` is in **degrees**, matching MJCF's own
+/// default `<compiler angle="degree">` convention — MuJoCo's compiler converts
+/// it to radians during compilation, regardless of whether the value came from
+/// XML text or was written directly (as this does). For `.slide`, `range` is a
+/// linear (length) quantity and is never angle-converted — it passes through
+/// exactly as authored.
 public struct Joint: MjSceneElement {
     public let name: String?
     public let type: JointKind
     public let axis: [Double]
     public let pos: [Double]
+    /// Joint limits. For `.hinge`/`.ball`, specified in degrees; for `.slide`,
+    /// a linear/length quantity. See struct documentation for details.
     public let range: ClosedRange<Double>?
 
     public init(name: String? = nil, type: JointKind, axis: [Double] = [0, 0, 1],
