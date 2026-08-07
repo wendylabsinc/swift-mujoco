@@ -24,6 +24,11 @@ This installs headers/lib into `$HOME/.local` (no `sudo` required) and writes
   rendering, spec composition.
 - `WendyMuJoCo` — JSON scene/state streaming for the Wendy Sim tab, plus
   Menagerie model resolution.
+- `mujoco-rl-demo` — REINFORCE and PPO trained against a cartpole balance
+  task using [MLX-Swift](https://github.com/ml-explore/mlx-swift). macOS
+  only (MLX is Metal-backed); the target and its `mlx-swift` dependency are
+  gated behind `#if os(macOS)` in `Package.swift` so Linux CI never sees
+  them.
 
 ### Sensors
 
@@ -59,3 +64,27 @@ gracefully where there is none.
 llvmpipe software rendering) and macOS on every push to `main` and every pull
 request. The Linux job sets `SWIFT_MUJOCO_REQUIRE_GL=1` so a runner that loses
 its GL stack fails the build instead of silently skipping the render tests.
+
+## RL sample (MLX-Swift)
+
+`mlx-swift` can't execute at runtime under plain `swift build`/`swift run`
+— SwiftPM's command-line build can't compile the Metal shaders it needs
+(see [mlx-swift's README](https://github.com/ml-explore/mlx-swift#readme)).
+Build and run it via `xcodebuild` instead:
+
+    xcodebuild build -scheme mujoco-rl-demo -destination 'platform=macOS' -derivedDataPath .build-xcode
+    .build-xcode/Build/Products/Debug/mujoco-rl-demo reinforce   # or: ppo
+
+Trains a Gaussian policy to balance a cartpole. Rollout collection runs
+`CartpoleEnv` episodes in parallel across a `TaskGroup`, each worker with
+its own `MjModel`/`MjData` pair (`MjModel`/`MjData` are not `Sendable` and
+must never be shared across threads). MLX is only used for the actual
+gradient step — action sampling during rollout is a hand-rolled Swift
+forward pass over a plain snapshot of the policy weights, in
+`Sources/MuJoCoRLEnv/`.
+
+`MujocoRLDemoTests` (the tests covering the MLX-dependent pieces) can't run
+under plain `swift test` for the same reason — verify them locally with
+`xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'`.
+CI runs `swift test --skip MujocoRLDemoTests` and never executes this
+target's tests.
