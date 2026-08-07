@@ -22,9 +22,9 @@ declared platform floor to satisfy every dependency's minimum, so
 ## Build & test
     export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
     swift build
-    swift test --skip MujocoRLDemoTests
+    swift test --skip MLXPolicyTrainingTests
 
-`MujocoRLDemoTests` needs Xcode's build system — see
+`MLXPolicyTrainingTests` needs Xcode's build system — see
 [RL sample (MLX-Swift)](#rl-sample-mlx-swift) below.
 
 ## What's here
@@ -38,6 +38,19 @@ declared platform floor to satisfy every dependency's minimum, so
   only (MLX is Metal-backed); the target and its `mlx-swift` dependency are
   gated behind `#if os(macOS)` in `Package.swift` so Linux CI never sees
   them.
+- `RobotKit` — shared RL plumbing (`Environment` protocol, rollout
+  collection, run-mode signaling) used by both the cartpole and Go2 demos.
+- `Go2Kit` — `Go2Environment`, a MuJoCo-backed Unitree Go2 quadruped driven
+  by a joint-space PD controller, loading the real `unitree_go2` model via
+  `WendyMuJoCo.Menagerie`. macOS only, same reason as `MLXPolicyTraining`
+  below.
+- `MLXPolicyTraining` — MLX-Swift policy/value networks and PPO training
+  step shared by `mujoco-rl-demo` and `go2-locomotion-demo`. macOS only
+  (MLX is Metal-backed), gated behind `#if os(macOS)` alongside the other
+  MLX-dependent targets.
+- `go2-locomotion-demo` — trains a Go2 locomotion policy via PPO and runs it
+  live. See [Go2 locomotion demo (MLX-Swift)](#go2-locomotion-demo-mlx-swift)
+  below. macOS only, same reason as `mujoco-rl-demo`.
 
 ### Sensors
 
@@ -173,8 +186,57 @@ MLX is only used for the actual gradient step — action sampling during rollout
 a hand-rolled Swift forward pass over a plain snapshot of the policy weights, in
 `Sources/MuJoCoRLEnv/`.
 
-`MujocoRLDemoTests` (the tests covering the MLX-dependent pieces) can't run
+`MLXPolicyTrainingTests` (the tests covering the MLX-dependent pieces) can't run
 under plain `swift test` for the same reason — verify them locally with
-`xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'`.
-CI runs `swift test --skip MujocoRLDemoTests` and never executes this
+
+    xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS' \
+      -skipPackagePluginValidation
+
+(`-skipPackagePluginValidation` is required for the whole-package scheme
+specifically: it builds `WorldSimServerCore`, which uses the
+`JSONSchemaPlugin` build-tool plugin, and a headless `xcodebuild` invocation
+with no prior DerivedData has no way to grant that plugin's one-time trust
+approval otherwise — confirmed by running the command above both with and
+without the flag. Single-target schemes that don't touch
+`WorldSimServerCore`, like `mujoco-rl-demo` and `go2-locomotion-demo`
+themselves, build fine without it.)
+
+CI runs `swift test --skip MLXPolicyTrainingTests` and never executes this
 target's tests.
+
+## Go2 locomotion demo (MLX-Swift)
+
+`go2-locomotion-demo` wires `RobotKit` + `MuJoCoRLEnv` + `MLXPolicyTraining` +
+`Go2Kit` into a runnable PPO training/inference loop for a MuJoCo-simulated
+Unitree Go2 quadruped. Like `mujoco-rl-demo` above, it links
+`MLXPolicyTraining` (MLX-Swift, Metal-backed), so it needs `xcodebuild` for
+the same reason — a plain `swift build`/`swift run` compiles it fine but
+fails at runtime (`MLX error: Failed to load the default metallib`) because
+SwiftPM's command-line build can't compile the Metal shaders MLX needs.
+
+    export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
+    xcodebuild build -scheme go2-locomotion-demo -destination 'platform=macOS' -derivedDataPath .build-xcode
+    .build-xcode/Build/Products/Debug/go2-locomotion-demo --learn   # train
+    .build-xcode/Build/Products/Debug/go2-locomotion-demo           # run inference from the checkpoint
+
+Unlike the whole-package test command above, building just the
+`go2-locomotion-demo` scheme does **not** need `-skipPackagePluginValidation`
+— this target doesn't depend on `WorldSimServerCore`/`JSONSchemaPlugin` at
+all (see the WorldSim paragraph below), so there's no plugin to validate.
+
+`--learn` trains a Go2 locomotion policy via PPO (`PPOTrainer`, in
+`MLXPolicyTraining`) against `Go2Environment`, checkpointing weights to
+`go2-policy-checkpoint.json` every 20 iterations and on exit. Without
+`--learn`, it loads that checkpoint and runs the policy live. **The
+checkpoint path is relative to the current working directory**, not to the
+binary — `--learn` and the inference run both need to be invoked from the
+same directory, or inference will report `No checkpoint at <path> — run
+with --learn first.` and refuse to start.
+
+Both modes stream the running sim into `WendyMuJoCo.WorldSimRecorder`'s slot
+files for the Sim tab, exactly like `mujoco-live-demo`. Unlike
+`mujoco-live-demo`, though, `go2-locomotion-demo` does **not** host the
+WorldSim HTTP router itself (it has no `WorldSimServerCore` dependency at
+all) — to actually watch it in the Sim tab you need a separately running
+`wendy-worldsim-server` (`swift run wendy-worldsim-server`, or the
+`xcodebuild`-built equivalent) serving those slot files.

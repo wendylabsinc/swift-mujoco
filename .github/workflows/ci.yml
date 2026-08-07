@@ -75,6 +75,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Go2KitTests (macOS-only, see Package.swift's `#if os(macOS)` block —
+      # the Linux job never builds this target at all) constructs a real
+      # Go2Environment, which resolves the real unitree_go2 model via
+      # WendyMuJoCo.Menagerie. With no vendored copy on the runner, that's a
+      # live `git clone` of google-deepmind/mujoco_menagerie into
+      # Menagerie's cache dir (WorldSim.directory()/menagerie-cache, which
+      # defaults to /tmp/wendy-worldsim/menagerie-cache since
+      # WENDY_WORLDSIM_DIR isn't set here) on every single run. Caching it
+      # means only the very first run (or a cache eviction) pays for the
+      # clone; the content is pinned to whatever's on the Menagerie repo's
+      # default branch and doesn't vary per-commit here, so a plain
+      # OS-scoped key (no file hash) is enough.
+      - name: Cache Menagerie clone
+        uses: actions/cache@v4
+        with:
+          path: /tmp/wendy-worldsim/menagerie-cache
+          key: menagerie-${{ runner.os }}
+
       - name: Install MuJoCo
         env:
           MUJOCO_PREFIX: /Users/runner/.local
@@ -96,12 +114,12 @@ jobs:
           MUJOCO_RL_DEMO: "1"
         run: |
           swift build -v
-          # MujocoRLDemoTests exercises mlx-swift, which can't execute under a
+          # MLXPolicyTrainingTests exercises mlx-swift, which can't execute under a
           # plain SwiftPM CLI build — only xcodebuild compiles the Metal
           # shaders it needs at runtime. That target is verified locally via
           # `xcodebuild test` instead (see README's "RL sample (MLX-Swift)"
           # section) and never runs in CI.
-          swift test -v --skip MujocoRLDemoTests
+          swift test -v --skip MLXPolicyTrainingTests
 
       # Regression guard for the manifest gating: a Linux-targeted build from a
       # macOS host must NOT pull in mlx-swift. `swift package describe` evaluates

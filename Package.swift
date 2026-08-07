@@ -31,8 +31,10 @@ var targets: [Target] = [
     .testTarget(name: "MuJoCoTests", dependencies: ["MuJoCo", "CMuJoCo"]),
     .target(name: "WendyMuJoCo", dependencies: ["MuJoCo", "CMuJoCo"]),
     .testTarget(name: "WendyMuJoCoTests", dependencies: ["WendyMuJoCo", "MuJoCo"]),
-    .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo"]),
+    .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo", "RobotKit"]),
     .testTarget(name: "MuJoCoRLEnvTests", dependencies: ["MuJoCoRLEnv", "MuJoCo"]),
+    .target(name: "RobotKit", path: "Sources/RobotKit"),
+    .testTarget(name: "RobotKitTests", dependencies: ["RobotKit"]),
     .target(
         name: "WorldSimServerCore",
         dependencies: [
@@ -73,6 +75,7 @@ var products: [Product] = [
     .library(name: "WorldSimServerCore", targets: ["WorldSimServerCore"]),
     .executable(name: "wendy-worldsim-server", targets: ["WendyWorldSimServer"]),
     .executable(name: "mujoco-live-demo", targets: ["MujocoLiveDemo"]),
+    .library(name: "RobotKit", targets: ["RobotKit"]),
 ]
 
 var dependencies: [Package.Dependency] = [
@@ -103,19 +106,41 @@ if buildRLDemo {
 dependencies.append(.package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.31.6"))
 
 targets.append(
-    .executableTarget(
-        name: "MujocoRLDemo",
+    .target(
+        name: "MLXPolicyTraining",
         dependencies: [
             "MuJoCoRLEnv",
             .product(name: "MLX", package: "mlx-swift"),
             .product(name: "MLXNN", package: "mlx-swift"),
             .product(name: "MLXOptimizers", package: "mlx-swift"),
         ],
+        path: "Sources/MLXPolicyTraining"
+    )
+)
+targets.append(.testTarget(name: "MLXPolicyTrainingTests", dependencies: ["MLXPolicyTraining", "MuJoCoRLEnv"]))
+targets.append(
+    .executableTarget(
+        name: "MujocoRLDemo",
+        dependencies: ["MuJoCoRLEnv", "MLXPolicyTraining"],
         path: "Sources/mujoco-rl-demo"
     )
 )
-targets.append(.testTarget(name: "MujocoRLDemoTests", dependencies: ["MujocoRLDemo", "MuJoCoRLEnv"]))
+products.append(.library(name: "MLXPolicyTraining", targets: ["MLXPolicyTraining"]))
 products.append(.executable(name: "mujoco-rl-demo", targets: ["MujocoRLDemo"]))
+
+targets.append(.target(name: "Go2Kit", dependencies: ["MuJoCo", "WendyMuJoCo", "MuJoCoRLEnv", "RobotKit"], path: "Sources/Go2Kit"))
+targets.append(.testTarget(name: "Go2KitTests", dependencies: ["Go2Kit"]))
+products.append(.library(name: "Go2Kit", targets: ["Go2Kit"]))
+
+targets.append(
+    .executableTarget(
+        name: "Go2LocomotionDemo",
+        dependencies: ["MuJoCoRLEnv", "MLXPolicyTraining", "Go2Kit", "RobotKit",
+                      "WendyMuJoCo", "MuJoCo"],
+        path: "Sources/go2-locomotion-demo"
+    )
+)
+products.append(.executable(name: "go2-locomotion-demo", targets: ["Go2LocomotionDemo"]))
 }
 
 let package = Package(

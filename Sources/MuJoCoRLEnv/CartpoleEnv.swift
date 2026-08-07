@@ -1,12 +1,13 @@
 import MuJoCo
+import RobotKit
 
-struct CartpoleObservation {
-    let cartPosition: Double
-    let cartVelocity: Double
-    let poleAngle: Double
-    let poleAngularVelocity: Double
+public struct CartpoleObservation: ObservationEncoding {
+    public let cartPosition: Double
+    public let cartVelocity: Double
+    public let poleAngle: Double
+    public let poleAngularVelocity: Double
 
-    var asArray: [Float] {
+    public var asArray: [Float] {
         [Float(cartPosition), Float(cartVelocity), Float(poleAngle), Float(poleAngularVelocity)]
     }
 }
@@ -27,8 +28,8 @@ private final class SharedModel: @unchecked Sendable {
     init(_ model: MjModel) { self.model = model }
 }
 
-final class CartpoleEnv {
-    static let maxSteps = 500
+public final class CartpoleEnv: Environment {
+    public static let maxSteps = 500
     static let cartPositionLimit: Double = 2.4
     // 12 degrees, matching the classic cartpole task's failure threshold.
     static let poleAngleLimit: Double = 0.2094395102393195
@@ -73,26 +74,33 @@ final class CartpoleEnv {
     var modelForTesting: MjModel { model }
     var dataForTesting: MjData { data }
 
-    init() {
+    public init() {
         self.model = Self.sharedModel.model
         self.data = MjData(model)
     }
 
-    func reset() -> CartpoleObservation {
+    /// Out of bounds OR the episode's own step cap — this environment treats
+    /// its step limit as part of its own termination condition, unlike
+    /// `Go2Environment`, where the training harness's external `maxSteps`
+    /// plays that role instead.
+    public var isTerminated: Bool {
+        let obs = observation()
+        let outOfBounds =
+            abs(obs.cartPosition) > Self.cartPositionLimit || abs(obs.poleAngle) > Self.poleAngleLimit
+        return outOfBounds || stepCount >= Self.maxSteps
+    }
+
+    public func reset() -> CartpoleObservation {
         mjResetData(model, data)
         stepCount = 0
         return observation()
     }
 
-    func step(action: Float) -> (observation: CartpoleObservation, reward: Float, done: Bool) {
-        data.setCtrl([Double(action)])
+    public func act(_ action: [Float]) -> CartpoleObservation {
+        data.setCtrl([Double(action[0])])
         mjStep(model, data)
         stepCount += 1
-        let obs = observation()
-        let outOfBounds =
-            abs(obs.cartPosition) > Self.cartPositionLimit || abs(obs.poleAngle) > Self.poleAngleLimit
-        let done = outOfBounds || stepCount >= Self.maxSteps
-        return (obs, 1.0, done)
+        return observation()
     }
 
     private func observation() -> CartpoleObservation {

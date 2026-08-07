@@ -5,3 +5,5 @@
 .build-xcode
 .DS_Store
 .worktrees/
+# go2-locomotion-demo's PPO checkpoint, written to the repo root at runtime.
+go2-policy-checkpoint.json

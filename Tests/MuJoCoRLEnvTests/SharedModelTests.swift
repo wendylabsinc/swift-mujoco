@@ -26,7 +26,7 @@ import Testing
 
     _ = a.reset()
     _ = b.reset()
-    for _ in 0..<25 { _ = a.step(action: 1.0) }
+    for _ in 0..<25 { _ = a.act([1.0]) }
     #expect(a.dataForTesting.time > 0)
     #expect(b.dataForTesting.time == 0, "stepping one env must not advance another")
 }
@@ -55,7 +55,7 @@ import Testing
     let a = CartpoleEnv()
     let b = CartpoleEnv()
     _ = a.reset()
-    for _ in 0..<40 { _ = a.step(action: 0.5) }
+    for _ in 0..<40 { _ = a.act([0.5]) }
     let advanced = a.dataForTesting.time
     _ = b.reset()
     #expect(a.dataForTesting.time == advanced, "resetting b must not touch a")
@@ -69,10 +69,14 @@ import Testing
         b1: [Float](repeating: 0, count: 8),
         w2: [Float](repeating: 0.1, count: 8),
         b2: [0],
-        logStd: -0.5,
+        logStd: [-0.5],
         inputDimensions: 4,
-        hiddenDimensions: 8)
-    let batch = await collectBatch(weights: weights, episodeCount: 8, baseSeed: 1234)
+        hiddenDimensions: 8,
+        actionDimensions: 1)
+    let batch = await collectBatch(
+        makeEnvironment: { CartpoleEnv() }, weights: weights, episodeCount: 8,
+        reward: { _ in 1.0 }, maxSteps: CartpoleEnv.maxSteps, baseSeed: 1234
+    )
     #expect(batch.count == 8)
     for t in batch {
         #expect(!t.actions.isEmpty)
@@ -81,6 +85,6 @@ import Testing
         #expect(t.actions.count == t.logProbs.count)
     }
     // Independent seeds -> different first actions (with overwhelming probability).
-    let firstActions = Set(batch.map { $0.actions.first ?? 0 })
+    let firstActions = Set(batch.map { $0.actions.first ?? [0] })
     #expect(firstActions.count > 1, "distinct seeds must give distinct action streams")
 }
