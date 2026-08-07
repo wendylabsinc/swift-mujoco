@@ -18,11 +18,10 @@ public struct Geom: MjSceneElement {
     }
 
     public func apply(spec: MjSpec, parent: MjSpecBody) {
-        let g = mjs_addGeom(parent.ptr, nil)!
+        guard let g = mjs_addGeom(parent.ptr, nil) else {
+            preconditionFailure("Geom.apply: mjs_addGeom returned NULL")
+        }
         if let name { _ = mjs_setName(g.pointee.element, name) }
-        g.pointee.type = spec.cGeomType(type)
-        g.pointee.size = (size[0], size[1], size[2])
-        g.pointee.pos = (pos[0], pos[1], pos[2])
-        g.pointee.rgba = (Float(rgba[0]), Float(rgba[1]), Float(rgba[2]), Float(rgba[3]))
+        spec.configureGeom(g, type: type, size: size, pos: pos, rgba: rgba)
     }
 }

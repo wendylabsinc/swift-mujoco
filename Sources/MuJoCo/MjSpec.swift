@@ -95,14 +95,21 @@ public final class MjSpec {
         // become a box, which quietly produced a different model than asked for.
         precondition(type != .other,
                      "addGeom: .other is not a constructible geom type (it is the read-side catch-all)")
-        precondition(size.count == 3, "addGeom: size needs 3 components, got \(size.count)")
-        precondition(pos.count == 3, "addGeom: pos needs 3 components, got \(pos.count)")
-        precondition(rgba.count == 4, "addGeom: rgba needs 4 components, got \(rgba.count)")
         let parent = mjs_findBody(ptr, body ?? "world")
         precondition(parent != nil, "addGeom: no body named \"\(body ?? "world")\" in this spec")
         guard let g = mjs_addGeom(parent, nil) else {
             preconditionFailure("addGeom: mjs_addGeom returned NULL")
         }
+        configureGeom(g, type: type, size: size, pos: pos, rgba: rgba)
+    }
+
+    /// Configure an mjsGeom's type, size, position, and RGBA — shared logic between
+    /// `addGeom` and `Geom.apply`. Validates array lengths upfront.
+    func configureGeom(_ g: UnsafeMutablePointer<mjsGeom>, type: MjModel.GeomType,
+                       size: [Double], pos: [Double], rgba: [Double]) {
+        precondition(size.count == 3, "configureGeom: size needs 3 components, got \(size.count)")
+        precondition(pos.count == 3, "configureGeom: pos needs 3 components, got \(pos.count)")
+        precondition(rgba.count == 4, "configureGeom: rgba needs 4 components, got \(rgba.count)")
         g.pointee.type = cGeomType(type)
         g.pointee.size = (size[0], size[1], size[2])
         g.pointee.pos = (pos[0], pos[1], pos[2])
