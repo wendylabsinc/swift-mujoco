@@ -893,6 +893,7 @@ Expected: FAIL to compile — `ReinforceTrainer` doesn't exist yet.
 ```swift
 // Sources/mujoco-rl-demo/ReinforceTrainer.swift
 import MLX
+import MLXNN
 import MLXOptimizers
 import MuJoCoRLEnv
 
