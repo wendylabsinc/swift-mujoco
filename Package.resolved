@@ -1,5 +1,5 @@
 {
-  "originHash" : "4e4e5fff4e22890a79e695c9c9d0aafa13c323c278d15e63ef829df63bf219e6",
+  "originHash" : "bbd21735ca8cbeffd559ce07f78f7bbc85c96032bd24f41cb7fc2b91d8343b12",
   "pins" : [
     {
       "identity" : "mlx-swift",
@@ -26,6 +26,15 @@
       "state" : {
         "revision" : "0c0290ff6b24942dadb83a929ffaaa1481df04a2",
         "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "swift-ros2",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/youtalk/swift-ros2",
+      "state" : {
+        "revision" : "ed83b55278c9a7c66ae934f266f5ec84284c57a7",
+        "version" : "1.3.0"
       }
     }
   ],

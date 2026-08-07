@@ -21,6 +21,11 @@ var targets: [Target] = [
     .testTarget(name: "MuJoCoRLEnvTests", dependencies: ["MuJoCoRLEnv", "MuJoCo"]),
 ]
 
+targets.append(.target(name: "RobotKit", dependencies: [
+    .product(name: "SwiftROS2", package: "swift-ros2")
+]))
+targets.append(.testTarget(name: "RobotKitTests", dependencies: ["RobotKit"]))
+
 var products: [Product] = [
     .library(name: "MuJoCo", targets: ["MuJoCo"]),
     .executable(name: "mujoco-demo", targets: ["MujocoDemo"]),
@@ -28,6 +33,7 @@ var products: [Product] = [
 ]
 
 var dependencies: [Package.Dependency] = []
+dependencies.append(.package(url: "https://github.com/youtalk/swift-ros2", from: "1.3.0"))
 
 #if os(macOS)
 dependencies.append(.package(url: "https://github.com/ml-explore/mlx-swift", from: "0.31.6"))
