@@ -107,7 +107,7 @@ targets.append(
     .executableTarget(
         name: "Go2LocomotionDemo",
         dependencies: ["MuJoCoRLEnv", "MLXPolicyTraining", "Go2Kit", "RobotKit",
-                      "WendyMuJoCo", "WorldSimServerCore", "MuJoCo"],
+                      "WendyMuJoCo", "MuJoCo"],
         path: "Sources/go2-locomotion-demo"
     )
 )

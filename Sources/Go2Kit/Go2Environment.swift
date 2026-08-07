@@ -10,6 +10,11 @@ import RobotKit
 /// controller, matching `go2.robot.json`'s numeric conventions exactly (see
 /// the `static let`s below).
 ///
+/// The model *path* is resolved (and, on a cold cache, fetched via git) at
+/// most once per process — see `modelPath` below — so constructing many
+/// environments (e.g. one per parallel PPO rollout worker, thousands of
+/// times over a training run) never repeats that work.
+///
 /// Not `Sendable` (it owns `MjModel`/`MjData`, neither of which is) — each
 /// parallel rollout worker constructs its own instance, same as `CartpoleEnv`.
 public final class Go2Environment: Environment {
@@ -60,23 +65,36 @@ public final class Go2Environment: Environment {
     private let baseQposAdr: Int
     private let baseDofAdr: Int
 
-    // Menagerie.fetch (invoked by Menagerie.load below on a cache miss) shells
-    // out to `git clone`/`git sparse-checkout add` against one shared cache
-    // directory with no locking of its own — two Go2Environments constructed
-    // concurrently (e.g. parallel rollout workers) race on git's own lock
-    // files and one throws. Serializing the load process-wide avoids that;
-    // it only costs anything on the first, cache-populating call.
-    private static let modelLoadLock = NSLock()
+    /// Resolved path to the `go2` model's XML (scene.xml, i.e. floor + lights
+    /// + robot, absent a vendored bare-robot copy — see `Menagerie.load`'s
+    /// own doc). A `static let` initializer runs at most once process-wide
+    /// no matter how many threads race to first-access it — Swift guarantees
+    /// this without any explicit locking — so this is exactly the place to
+    /// do the one-time, possibly-git-fetching resolution that used to run
+    /// (redundantly, and serialized behind a lock) on every `init()` call.
+    /// `Menagerie.fetch`, on a cache miss, shells out to `git clone`/`git
+    /// sparse-checkout add`; with a warm cache (the common case once this
+    /// has run once) this closure does nothing but a directory scan.
+    private static let modelPath: String = {
+        if let path = Menagerie.resolveModelPath("go2", searchDirs: Menagerie.vendorDirs) {
+            return path
+        }
+        let cache = WorldSim.directory().appendingPathComponent("menagerie-cache")
+        guard let repo = try? Menagerie.fetch("go2", cacheDir: cache),
+              let path = Menagerie.resolveModelPath("go2", searchDirs: [repo.path])
+        else {
+            preconditionFailure("MuJoCo model 'go2' not found. Vendored: \(Set(Menagerie.nameMap.values).sorted())")
+        }
+        return path
+    }()
 
     public init(velocityCommand: (vx: Double, vy: Double, wz: Double) = (0, 0, 0)) {
-        // Menagerie.load resolves "go2" -> "unitree_go2", preferring a vendored
-        // copy under Menagerie.vendorDirs and falling back to a sparse git
-        // clone of google-deepmind/mujoco_menagerie into WorldSim's cache dir.
-        // With no vendored copy present, it returns unitree_go2/scene.xml
-        // (floor + lights, robot included) rather than the bare robot XML.
-        Self.modelLoadLock.lock()
-        let model = try! Menagerie.load("go2")
-        Self.modelLoadLock.unlock()
+        // `modelPath` above handles path resolution/fetching exactly once,
+        // process-wide; loading an `MjModel` from that already-resolved path
+        // still happens per-instance (each environment needs its own
+        // MjModel/MjData pair — neither is `Sendable`, so they can't be
+        // shared across parallel rollout workers).
+        let model = try! MjModel.load(xmlPath: Self.modelPath)
         self.model = model
         self.data = MjData(model)
         self.velocityCommand = velocityCommand
