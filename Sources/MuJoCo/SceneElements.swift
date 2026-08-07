@@ -43,6 +43,10 @@ public struct Body: MjSceneElement {
     }
 
     public func apply(spec: MjSpec, parent: MjSpecBody) {
+        precondition(pos.count == 3, "Body: pos needs 3 components, got \(pos.count)")
+        if let quat {
+            precondition(quat.count == 4, "Body: quat needs 4 components, got \(quat.count)")
+        }
         guard let b = mjs_addBody(parent.ptr, nil) else {
             preconditionFailure("Body.apply: mjs_addBody returned NULL")
         }
