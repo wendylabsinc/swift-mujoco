@@ -71,6 +71,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Go2KitTests (macOS-only, see Package.swift's `#if os(macOS)` block —
+      # the Linux job never builds this target at all) constructs a real
+      # Go2Environment, which resolves the real unitree_go2 model via
+      # WendyMuJoCo.Menagerie. With no vendored copy on the runner, that's a
+      # live `git clone` of google-deepmind/mujoco_menagerie into
+      # Menagerie's cache dir (WorldSim.directory()/menagerie-cache, which
+      # defaults to /tmp/wendy-worldsim/menagerie-cache since
+      # WENDY_WORLDSIM_DIR isn't set here) on every single run. Caching it
+      # means only the very first run (or a cache eviction) pays for the
+      # clone; the content is pinned to whatever's on the Menagerie repo's
+      # default branch and doesn't vary per-commit here, so a plain
+      # OS-scoped key (no file hash) is enough.
+      - name: Cache Menagerie clone
+        uses: actions/cache@v4
+        with:
+          path: /tmp/wendy-worldsim/menagerie-cache
+          key: menagerie-${{ runner.os }}
+
       - name: Install MuJoCo
         env:
           MUJOCO_PREFIX: /Users/runner/.local
