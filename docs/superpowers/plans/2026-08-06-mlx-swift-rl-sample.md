@@ -17,7 +17,10 @@
 - `mlx-swift` requires macOS 14+, so `Package.swift`'s `platforms:` entry must be bumped from `.macOS(.v13)` to `.macOS(.v14)`. This is an unconditional change to the array literal (not itself wrapped in `#if os(macOS)`) — a `.macOS(...)` platform entry has no effect on Linux builds either way, so this is safe for the Linux CI job.
 - Target-naming convention already established in this repo: the Swift module/target name is PascalCase (`MujocoDemo`), the product name (what `swift run` invokes) is kebab-case (`mujoco-demo`), and the source directory matches the product name. Follow the same pattern: target `MujocoRLDemo`, product `mujoco-rl-demo`, path `Sources/mujoco-rl-demo`.
 - Build/test locally with: `export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig` (MuJoCo must already be installed per the repo's README; it is on this machine).
-- No CI YAML changes are required or in scope for this plan.
+- **`mlx-swift` cannot execute at runtime under plain `swift build`/`swift test`/`swift run`.** This was discovered during Task 5 and independently confirmed by the controller: `mlx-swift`'s own README states "SwiftPM (command line) cannot build the Metal shaders so the ultimate build has to be done via Xcode." Plain `swift build`/`swift test`/`swift run` compile and link fine, but the moment any code actually executes an MLX operation, the process crashes with `MLX error: Failed to load the default metallib`. Only `xcodebuild` (which does compile Metal shaders) can produce a runnable/testable binary. Consequences, decided with the human partner:
+  - Any task whose tests exercise real MLX operations (Tasks 6, 7, and the `GaussianPolicyTests` already merged in Task 5) must be verified with `xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'` (the whole scheme — `-only-testing:` filters were tried and did not reliably match Swift Testing's `@Test` identifiers, so run the full suite rather than one that silently executes 0 tests) instead of `swift test --filter ...`. `swift build`/`swift test --skip MujocoRLDemoTests` (see below) still verify everything else and remain part of each task's workflow — `xcodebuild test` is an *addition* for the MLX-touching tests specifically, not a replacement for the rest of the task's verification.
+  - Task 8's end-to-end run uses `xcodebuild build -scheme mujoco-rl-demo -destination 'platform=macOS' -derivedDataPath <dir>` and then executes the resulting binary directly (`<dir>/Build/Products/Debug/mujoco-rl-demo reinforce`), not `swift run` — confirmed working: `xcodebuild build` bundles a real `default.metallib` next to the binary (inside `mlx-swift_Cmlx.bundle`), which plain `swift build` never produces.
+  - This repo's macOS CI job's `swift test -v` step must gain `--skip MujocoRLDemoTests` (confirmed: this avoids the crash entirely, and the other 83 existing tests still run and pass under the flag). This is the one CI YAML change this plan now requires — it was originally scoped as "no CI changes needed," which this finding supersedes. `MujocoRLDemoTests` therefore never runs in CI; it's verified locally via `xcodebuild test` as part of each task's dispatch, and the README documents the same requirement for contributors.
 
 ---
 
@@ -814,12 +817,13 @@ extension GaussianPolicy {
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run:
+This exercises real MLX operations — plain `swift test` compiles it but crashes at runtime (`mlx-swift` cannot run under SwiftPM's CLI build; see Global Constraints). Use `xcodebuild test` instead:
+
 ```bash
 export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
-swift test --filter GaussianPolicyTests
+xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'
 ```
-Expected: PASS (all three tests). If `snapshotMatchesLiveMLXForwardPass` fails on the flattening-order assumption, the fix is in `policyForward` (Task 3) or here, not in the test.
+Expected: `** TEST SUCCEEDED **`, with all three of this task's tests passing (run via the whole scheme — `-only-testing:` filters don't reliably match Swift Testing's `@Test` identifiers). If `snapshotMatchesLiveMLXForwardPass` fails on the flattening-order assumption, the fix is in `policyForward` (Task 3) or here, not in the test.
 
 - [ ] **Step 6: Commit**
 
@@ -949,12 +953,13 @@ final class ReinforceTrainer {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run:
+This test executes real MLX operations (`valueAndGrad`, `Adam.update`) — plain `swift test` compiles it but crashes at runtime (`mlx-swift` cannot run under SwiftPM's CLI build; see Global Constraints). Use `xcodebuild test` instead, which does compile the Metal shaders `mlx-swift` needs:
+
 ```bash
 export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
-swift test --filter ReinforceTrainerTests
+xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'
 ```
-Expected: PASS.
+Expected: `** TEST SUCCEEDED **`, with `trainStepReducesLossOnAFixedBatch` (and every other test in the suite) passing. This runs the whole suite rather than a filtered subset — `-only-testing:` filters don't reliably match Swift Testing's `@Test` identifiers, and a filter that silently matches nothing still reports success.
 
 - [ ] **Step 5: Wire up the `reinforce` CLI path in `main.swift`**
 
@@ -1187,12 +1192,13 @@ final class PPOTrainer {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run:
+This exercises real MLX operations — plain `swift test` compiles it but crashes at runtime (`mlx-swift` cannot run under SwiftPM's CLI build; see Global Constraints). Use `xcodebuild test` instead:
+
 ```bash
 export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
-swift test --filter PPOTrainerTests
+xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'
 ```
-Expected: PASS.
+Expected: `** TEST SUCCEEDED **`, with `trainStepReducesValueLossOnAFixedBatch` (and every other test in the suite) passing.
 
 - [ ] **Step 5: Add the `ppo` case to `main.swift`**
 
@@ -1217,15 +1223,15 @@ default:
     print("Unknown algorithm '\(algorithm)'. Usage: mujoco-rl-demo [reinforce|ppo]")
 ```
 
-- [ ] **Step 6: Build**
+- [ ] **Step 6: Build and run the full suite**
 
-Run:
 ```bash
 export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
 swift build
-swift test
+swift test --skip MujocoRLDemoTests
+xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'
 ```
-Expected: both succeed; full test suite (MuJoCoTests, WendyMuJoCoTests, MuJoCoRLEnvTests, MujocoRLDemoTests) passes.
+Expected: `swift build` succeeds; `swift test --skip MujocoRLDemoTests` passes (MuJoCoTests, WendyMuJoCoTests, MuJoCoRLEnvTests — everything that doesn't touch MLX, which crashes under plain `swift test` per Global Constraints); `xcodebuild test` separately passes the whole scheme including `MujocoRLDemoTests`.
 
 - [ ] **Step 7: Commit**
 
@@ -1236,34 +1242,55 @@ git commit -m "feat: add PPOTrainer with clipped surrogate objective and wire up
 
 ---
 
-### Task 8: End-to-end verification and README
+### Task 8: End-to-end verification, CI, and README
 
 **Files:**
 - Modify: `README.md`
+- Modify: `.github/workflows/ci.yml`
 
 **Interfaces:**
 - Consumes: the complete `mujoco-rl-demo` executable (Tasks 1–7).
-- Produces: nothing new — this task is verification plus documentation.
+- Produces: nothing new — this task is verification, one CI flag, and documentation.
 
-- [ ] **Step 1: Run REINFORCE end-to-end**
+`mlx-swift` cannot execute at runtime under plain `swift build`/`swift run` (see Global Constraints) — running the demo for real requires building via `xcodebuild`, which bundles the `default.metallib` plain SwiftPM never produces, then executing the resulting binary directly.
 
-Run:
+- [ ] **Step 1: Build via xcodebuild and run REINFORCE end-to-end**
+
 ```bash
 export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
-swift run mujoco-rl-demo reinforce
+xcodebuild build -scheme mujoco-rl-demo -destination 'platform=macOS' -derivedDataPath .build-xcode
+.build-xcode/Build/Products/Debug/mujoco-rl-demo reinforce
 ```
 Expected: 200 lines of `iter N: mean return X (loss Y)`. The mean return should clearly trend upward from its starting point (a random policy on this task typically averages roughly 20–40 steps before falling) over the course of the run. It does not need to hit the max of 500 on every episode by the end. If the trend is flat or noisy with no visible improvement by iteration 200, that's a hyperparameter problem, not a wiring problem — check `learningRate` and `hiddenDimensions` in `main.swift` (Task 6) before suspecting the trainer logic.
 
 - [ ] **Step 2: Run PPO end-to-end**
 
-Run:
 ```bash
-export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
-swift run mujoco-rl-demo ppo
+.build-xcode/Build/Products/Debug/mujoco-rl-demo ppo
 ```
-Expected: same shape of output with `policy loss`/`value loss` instead of `loss`; mean return should trend upward, and `value loss` should trend downward (or at least not diverge) as the baseline fits the returns.
+(No need to rebuild — the binary handles both subcommands.) Expected: same shape of output with `policy loss`/`value loss` instead of `loss`; mean return should trend upward, and `value loss` should trend downward (or at least not diverge) as the baseline fits the returns.
 
-- [ ] **Step 3: Update `README.md`**
+Clean up the scratch build directory once both runs are confirmed:
+```bash
+rm -rf .build-xcode
+```
+
+- [ ] **Step 3: Add `--skip MujocoRLDemoTests` to CI's macOS job**
+
+In `.github/workflows/ci.yml`, find the `macos` job's `Build and test` step (the one running `swift build -v` / `swift test -v`) and change the test line:
+
+```yaml
+      - name: Build and test
+        env:
+          PKG_CONFIG_PATH: /Users/runner/.local/lib/pkgconfig
+        run: |
+          swift build -v
+          swift test -v --skip MujocoRLDemoTests
+```
+
+This is the one CI change this plan requires (see Global Constraints) — without it, `swift test -v` would crash on this job the same way it does locally, since `MujocoRLDemoTests` exercises real MLX operations that plain SwiftPM-built binaries can't execute. `MujocoRLDemoTests` is verified locally via `xcodebuild test` (Tasks 5–7's own verification steps), not in CI.
+
+- [ ] **Step 4: Update `README.md`**
 
 Add a new bullet to the existing `## What's here` list (after the `WendyMuJoCo` bullet):
 
@@ -1280,7 +1307,13 @@ Add a new section after the `## CI` section (or before it — match whatever rea
 ```markdown
 ## RL sample (MLX-Swift)
 
-    swift run mujoco-rl-demo reinforce   # or: ppo
+`mlx-swift` can't execute at runtime under plain `swift build`/`swift run`
+— SwiftPM's command-line build can't compile the Metal shaders it needs
+(see [mlx-swift's README](https://github.com/ml-explore/mlx-swift#readme)).
+Build and run it via `xcodebuild` instead:
+
+    xcodebuild build -scheme mujoco-rl-demo -destination 'platform=macOS' -derivedDataPath .build-xcode
+    .build-xcode/Build/Products/Debug/mujoco-rl-demo reinforce   # or: ppo
 
 Trains a Gaussian policy to balance a cartpole. Rollout collection runs
 `CartpoleEnv` episodes in parallel across a `TaskGroup`, each worker with
@@ -1289,11 +1322,17 @@ must never be shared across threads). MLX is only used for the actual
 gradient step — action sampling during rollout is a hand-rolled Swift
 forward pass over a plain snapshot of the policy weights, in
 `Sources/MuJoCoRLEnv/`.
+
+`MujocoRLDemoTests` (the tests covering the MLX-dependent pieces) can't run
+under plain `swift test` for the same reason — verify them locally with
+`xcodebuild test -scheme swift-mujoco-Package -destination 'platform=macOS'`.
+CI runs `swift test --skip MujocoRLDemoTests` and never executes this
+target's tests.
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add README.md
-git commit -m "docs: document the mujoco-rl-demo MLX-Swift RL sample"
+git add README.md .github/workflows/ci.yml
+git commit -m "docs: document the mujoco-rl-demo MLX-Swift RL sample; skip its tests in CI"
 ```
