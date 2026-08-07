@@ -205,3 +205,18 @@ public struct Light: MjSceneElement {
         }
     }
 }
+
+/// Physics options. Currently just `timestep`; ignores `parent` and mutates
+/// the spec directly, mirroring `MjSpec.swift`'s existing direct-field-write
+/// pattern (e.g. `g!.pointee.type = ...`).
+public struct Option: MjSceneElement {
+    public let timestep: Double
+
+    public init(timestep: Double) {
+        self.timestep = timestep
+    }
+
+    public func apply(spec: MjSpec, parent: MjSpecBody) {
+        spec.ptr.pointee.option.timestep = timestep
+    }
+}

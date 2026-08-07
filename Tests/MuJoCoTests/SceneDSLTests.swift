@@ -154,3 +154,44 @@ import Testing
     #expect(model.ncam == 1)
     #expect(abs(model.camFovy(0) - 45) < 1e-9)
 }
+
+@Test func optionSetsTimestep() throws {
+    let scene = Scene {
+        Option(timestep: 0.002)
+        Geom(type: .plane, size: [5, 5, 0.1])
+    }
+    let model = try scene.compile()
+    #expect(abs(model.timestep - 0.002) < 1e-9)
+}
+
+@Test func ifInsideSceneBuilderAddsOrOmitsAnElement() throws {
+    func makeScene(includeExtra: Bool) -> Scene {
+        Scene {
+            Geom(type: .plane, size: [5, 5, 0.1])
+            if includeExtra {
+                Geom(name: "extra", type: .box, size: [0.1, 0.1, 0.1])
+            }
+        }
+    }
+
+    let withExtra = try makeScene(includeExtra: true).compile()
+    #expect(withExtra.ngeom == 2)
+
+    let withoutExtra = try makeScene(includeExtra: false).compile()
+    #expect(withoutExtra.ngeom == 1)
+}
+
+@Test func forLoopInsideSceneBuilderAddsMultipleBodies() throws {
+    let scene = Scene {
+        Geom(type: .plane, size: [5, 5, 0.1])
+        for i in 0..<3 {
+            Body(name: "box\(i)", pos: [Double(i), 0, 1]) {
+                Geom(type: .box, size: [0.1, 0.1, 0.1])
+            }
+        }
+    }
+    let model = try scene.compile()
+    #expect(model.nbody == 4)   // world + 3 boxes
+    #expect(model.id(of: objBody, name: "box0") != nil)
+    #expect(model.id(of: objBody, name: "box2") != nil)
+}
