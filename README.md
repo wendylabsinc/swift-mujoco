@@ -74,6 +74,63 @@ llvmpipe software rendering) and macOS on every push to `main` and every pull
 request. The Linux job sets `SWIFT_MUJOCO_REQUIRE_GL=1` so a runner that loses
 its GL stack fails the build instead of silently skipping the render tests.
 
+## Allocation behaviour
+
+The hot paths are allocation-free; the ergonomic paths are not, and each says which
+it is. The rule of thumb: anything returning `[Double]` allocates, anything
+returning a value type or taking caller storage does not.
+
+| Instead of | Use | Why |
+|---|---|---|
+| `data.qpos` | `data.qposSpan`, or `withQpos { }` | the Array is rebuilt per access |
+| `data.xmat(i)` / `bodyMat(i)` | `data.bodyMatrix(i)` → `Mat3` | `Mat3` stores nine scalars inline |
+| `geomXmat`/`siteMat`/`camMat` | `geomMatrix`/`siteMatrix`/`camMatrix` | same |
+| `data.getFullState()` | `data.readFullState(into:)` | reuse one buffer across an MPC loop |
+| `renderer.render(data:cameraId:)` | `render(data:cameraId:into:)` + `FrameBuffer` | ~1.7 MB/frame at 640×480 otherwise |
+
+`Vec3`/`Quat`/`Mat3` arithmetic is `@inlinable`, so it inlines into consumer code
+rather than crossing a module boundary per operation.
+
+`Mat3` stores nine scalars rather than an `InlineArray` because `InlineArray` is
+`@available(macOS 26, *)` and this package targets macOS 14 — adopting it would
+force the deployment floor forward. The layout is identical; swap the storage if
+that floor ever moves.
+
+### `Span` accessors are experimental
+
+`qposSpan`, `qvelSpan`, `qaccSpan`, `ctrlSpan`, `sensordataSpan` and
+`sensorValuesSpan(_:)` return a borrowed `Span`, which the compiler prevents from
+outliving the `MjData` — stronger than the `with*` closures, which hand out an
+`UnsafeBufferPointer` you are merely asked not to escape.
+
+**Calling them needs nothing special.** *Building this package* does: producing a
+`Span` from a class wrapping a raw C pointer currently needs the `Lifetimes`
+experimental feature, the underscored `@_lifetime`, and the stdlib-internal
+`_overrideLifetime`. All three live in `Sources/MuJoCo/MjSpan.swift` and nowhere
+else, so if a toolchain changes their spelling that one file can be deleted without
+touching the rest of the library. That is also why the `with*` closure accessors
+remain — the primary hot-path API does not depend on unstable spellings.
+
+Note that `Span` is not a `Collection` in Swift 6.3: no `map`/`reduce`/`first`, no
+`Array(span)`. Iterate `for i in span.indices`.
+
+## Concurrency
+
+Structured only — no detached tasks, no `DispatchQueue`, no completion handlers.
+`collectBatch` fans rollouts out over a `TaskGroup`.
+
+`MjModel`, `MjData`, `MjSpec`, `MjRayBatch`, `MjOffscreenRenderer` and `Handle` are
+deliberately **not** `Sendable`: they wrap mutable C state that is unsafe to touch
+from two isolation domains. Keep each on one. Everything that is *data* —
+`Vec3`, `Mat3`, `Quat`, `RayHit`, `Contact`, `RenderedFrame`, `FrameBuffer`,
+`PolicyWeights`, `LidarPattern`, the `*Info` structs — is a `Sendable` value type
+and crosses freely.
+
+`Handle` has two forms of the frame pump. Use `syncAsync()` from a `Task`: while the
+sim is paused it suspends, whereas `sync()` parks the calling thread with
+`Thread.sleep` and would hold a cooperative-pool thread (one per core) for the whole
+pause. `syncAsync()` is also cancellation-aware.
+
 ## RL sample (MLX-Swift)
 
 The RL demo target is **opt-in**, behind `MUJOCO_RL_DEMO=1`. It is not gated on

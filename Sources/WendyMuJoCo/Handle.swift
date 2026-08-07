@@ -180,28 +180,80 @@ public final class Handle {
         return true
     }
 
-    public func sync() {
-        var c = pollControl()
+    /// Apply pending control, publish a frame, and report whether the caller
+    /// should park because the sim is paused.
+    ///
+    /// The shared body of ``sync()`` and ``syncAsync()`` — everything except *how*
+    /// the wait is performed, which is the only thing that differs between the
+    /// blocking and async forms.
+    private func syncOnce() -> Bool {
+        let c = pollControl()
         _ = applyReset(c)
         applyCtrl(c)
         _ = applyPoke(c)
         publishState()
-        // Pause: block after showing the frame until resumed or single-stepped.
-        // Reset and pokes still take effect while paused. `running` is checked
-        // through an atomic so close() can break us out from another thread.
-        if c.paused && c.step == stepSeen && isRunning() {
+        let shouldPark = c.paused && c.step == stepSeen && isRunning()
+        if shouldPark {
             // Paused means no further frames, so make sure the UI is showing the
             // current one before we park.
             publishState(force: true)
-            while c.paused && c.step == stepSeen && isRunning() {
-                Thread.sleep(forTimeInterval: Self.pausePollInterval)
-                c = pollControl(force: true)
-                let fired = applyReset(c)
-                let poked = applyPoke(c)
-                if fired || poked { publishState(force: true) }
+        } else {
+            stepSeen = c.step
+        }
+        return shouldPark
+    }
+
+    /// One iteration of the pause loop: re-read control, apply reset/poke, and
+    /// report whether we are still paused.
+    private func pauseTick() -> Bool {
+        let c = pollControl(force: true)
+        let fired = applyReset(c)
+        let poked = applyPoke(c)
+        if fired || poked { publishState(force: true) }
+        guard c.paused && c.step == stepSeen && isRunning() else {
+            stepSeen = c.step
+            return false
+        }
+        return true
+    }
+
+    /// Publish a frame and, if paused, **block** until resumed or single-stepped.
+    ///
+    /// - Important: While paused this parks the calling thread with
+    ///   `Thread.sleep`. That is fine on a thread you own, and wrong inside a
+    ///   `Task`: it occupies a cooperative-pool thread for the whole pause, and
+    ///   the pool has one thread per core. Driving a sim loop from a `Task` is the
+    ///   natural thing to do, so prefer ``syncAsync()`` there — it suspends
+    ///   instead, freeing the thread for other work.
+    public func sync() {
+        guard syncOnce() else { return }
+        while pauseTick() {
+            Thread.sleep(forTimeInterval: Self.pausePollInterval)
+        }
+    }
+
+    /// Publish a frame and, if paused, **suspend** until resumed or single-stepped.
+    ///
+    /// The structured-concurrency form of ``sync()``: `Task.sleep` yields the
+    /// cooperative-pool thread rather than holding it, so a paused sim costs no
+    /// thread. It is also cancellation-aware — cancelling the surrounding task
+    /// returns from the pause immediately, without needing ``close()``.
+    ///
+    /// The MuJoCo stepping itself is still synchronous and still has to happen on
+    /// one isolation domain; this only changes how the *wait* is performed. Call it
+    /// from wherever your `MjModel`/`MjData` live.
+    public func syncAsync() async {
+        guard syncOnce() else { return }
+        while pauseTick() {
+            do {
+                try await Task.sleep(for: .seconds(Self.pausePollInterval))
+            } catch {
+                // Cancelled: stop waiting and let the caller unwind. Do not treat
+                // this as "resumed" — leave stepSeen alone so the next sync still
+                // sees the pause if the task is restarted.
+                return
             }
         }
-        stepSeen = c.step
     }
 }
 

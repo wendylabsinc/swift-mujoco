@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.3
 import Foundation
 import PackageDescription
 
@@ -13,7 +13,17 @@ var targets: [Target] = [
             .linkedFramework("OpenGL", .when(platforms: [.macOS]))
         ]
     ),
-    .target(name: "MuJoCo", dependencies: ["CMuJoCo", "CMuJoCoGL"]),
+    .target(
+        name: "MuJoCo",
+        dependencies: ["CMuJoCo", "CMuJoCoGL"],
+        swiftSettings: [
+            // Needed to *produce* a Span from our own accessors: the lifetime
+            // dependency that ties the returned Span to `self` is still spelled
+            // with the underscored `@_lifetime` and gated behind this feature in
+            // Swift 6.3. Consuming a Span needs neither.
+            .enableExperimentalFeature("Lifetimes")
+        ]
+    ),
     .executableTarget(name: "MujocoDemo", dependencies: ["MuJoCo", "WendyMuJoCo"], path: "Sources/mujoco-demo"),
     // CMuJoCo is a direct test dependency so the quaternion tests can compare the
     // Swift helpers against mju_subQuat/mju_negQuat/mju_rotVecQuat themselves,

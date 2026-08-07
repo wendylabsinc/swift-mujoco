@@ -39,6 +39,17 @@ extension MjData {
         return (0..<9).map { b[i*9 + $0] }
     }
 
+    /// Orientation of a body's frame as an inline-stored ``Mat3``.
+    ///
+    /// The allocation-free replacement for `xmat(_:)`/`bodyMat(_:)`, which each
+    /// build a fresh 9-element heap array per call. `Mat3` holds its nine doubles
+    /// inline, so this costs nothing but the copy.
+    public func bodyMatrix(_ i: Int) -> Mat3 {
+        precondition(i >= 0 && i < model.nbody)
+        let b = ptr.pointee.xmat!
+        return Mat3(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
     /// Cartesian position of a body's frame origin, world coordinates.
     /// Clearly-named forward of `xpos(_:)`, which sites and geoms would
     /// otherwise ambiguously share the name of (`sitePos`/`geomXpos` already
@@ -84,6 +95,14 @@ extension MjData {
         return body(UnsafeBufferPointer(start: b + i*9, count: 9))
     }
 
+    /// World orientation of a site as an inline-stored ``Mat3``. Allocation-free
+    /// counterpart of `siteMat(_:)`.
+    public func siteMatrix(_ i: Int) -> Mat3 {
+        precondition(i >= 0 && i < model.nsite)
+        let b = ptr.pointee.site_xmat!
+        return Mat3(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
     /// World orientation of a site as a quaternion. Converts in place; allocates
     /// nothing.
     public func siteQuat(_ i: Int) -> Quat { withSiteMat(i) { mat2Quat($0) } }
@@ -108,6 +127,14 @@ extension MjData {
         precondition(i >= 0 && i < model.ncam)
         let b = ptr.pointee.cam_xmat!
         return body(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
+    /// World orientation of a camera as an inline-stored ``Mat3``. Allocation-free
+    /// counterpart of `camMat(_:)`.
+    public func camMatrix(_ i: Int) -> Mat3 {
+        precondition(i >= 0 && i < model.ncam)
+        let b = ptr.pointee.cam_xmat!
+        return Mat3(UnsafeBufferPointer(start: b + i*9, count: 9))
     }
 
     /// World orientation of a camera as a quaternion. Sites and geoms both

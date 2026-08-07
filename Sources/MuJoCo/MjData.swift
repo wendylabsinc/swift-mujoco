@@ -108,6 +108,14 @@ public final class MjData {
         return body(UnsafeBufferPointer(start: b + i*9, count: 9))
     }
 
+    /// World orientation of a geom as an inline-stored ``Mat3``. Allocation-free
+    /// counterpart of `geomXmat(_:)`.
+    public func geomMatrix(_ i: Int) -> Mat3 {
+        precondition(i >= 0 && i < model.ngeom)
+        let b = ptr.pointee.geom_xmat!
+        return Mat3(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
     /// World orientation of a geom as a quaternion.
     ///
     /// Reads straight out of `mjData` and converts in place — no intermediate
