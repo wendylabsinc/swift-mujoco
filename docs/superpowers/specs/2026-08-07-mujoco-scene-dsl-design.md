@@ -174,7 +174,18 @@ it just walks once at compile time.
   `mjJNT_HINGE`/`mjJNT_SLIDE`/`mjJNT_BALL` (free joints have their own
   dedicated element above, so `mjJNT_FREE` is never reached through `Joint`).
   `range` sets `limited = 1` and `range = [range.lowerBound, range.upperBound]`
-  when non-nil, leaving the joint unlimited otherwise.
+  when non-nil, leaving the joint unlimited otherwise. **Units, hinge/ball
+  only: degrees**, matching MJCF's own default `<compiler angle="degree">`
+  convention — `Joint(type: .hinge, range: -90...90)` means -90° to 90°,
+  exactly as `<joint range="-90 90"/>` would in hand-written MJCF. This is
+  not a DSL-side conversion: MuJoCo's compiler applies the degree→radian
+  conversion to a hinge/ball joint's `mjsJoint.range` during `mj_compile`
+  regardless of whether the field was set from XML text or written directly
+  (as `Joint.apply` does) — a compiled hinge/ball joint's `joints[i].range`
+  is always in radians either way. **`.slide` is unaffected** — a slide
+  joint's range is a linear (length) quantity, never angle-converted, and
+  passes through as authored. `axis` and `pos` are also unaffected
+  (direction/position values, not angle quantities).
 - **`Site(name: String? = nil, pos: [Double] = [0, 0, 0], size: Double = 0.01)`**
 - **`Camera(name: String? = nil, pos: [Double] = [0, 0, 0], fovy: Double = 45)`**
 - **`Light(pos: [Double]? = nil)`** — `MjSpec`'s own initializer already adds
