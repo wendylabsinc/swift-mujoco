@@ -77,3 +77,53 @@ public struct FreeJoint: MjSceneElement {
         if let name { _ = mjs_setName(j.pointee.element, name) }
     }
 }
+
+/// The joint kinds reachable through `Joint`. Free joints have their own
+/// dedicated `FreeJoint` element, so `mjJNT_FREE` is never produced here.
+public enum JointKind {
+    case hinge, slide, ball
+}
+
+private func cJointType(_ t: JointKind) -> mjtJoint {
+    switch t {
+    case .hinge: return mjJNT_HINGE
+    case .slide: return mjJNT_SLIDE
+    case .ball: return mjJNT_BALL
+    }
+}
+
+/// A hinge, slide, or ball joint. `range`, when non-nil, sets both the
+/// joint's limits and marks it as limited; when nil, the joint is
+/// unlimited (MuJoCo's own default for a freshly added joint).
+public struct Joint: MjSceneElement {
+    public let name: String?
+    public let type: JointKind
+    public let axis: [Double]
+    public let pos: [Double]
+    public let range: ClosedRange<Double>?
+
+    public init(name: String? = nil, type: JointKind, axis: [Double] = [0, 0, 1],
+                pos: [Double] = [0, 0, 0], range: ClosedRange<Double>? = nil) {
+        self.name = name
+        self.type = type
+        self.axis = axis
+        self.pos = pos
+        self.range = range
+    }
+
+    public func apply(spec: MjSpec, parent: MjSpecBody) {
+        precondition(axis.count == 3, "Joint: axis needs 3 components, got \(axis.count)")
+        precondition(pos.count == 3, "Joint: pos needs 3 components, got \(pos.count)")
+        guard let j = mjs_addJoint(parent.ptr, nil) else {
+            preconditionFailure("Joint.apply: mjs_addJoint returned NULL")
+        }
+        if let name { _ = mjs_setName(j.pointee.element, name) }
+        j.pointee.type = cJointType(type)
+        j.pointee.axis = (axis[0], axis[1], axis[2])
+        j.pointee.pos = (pos[0], pos[1], pos[2])
+        if let range {
+            j.pointee.range = (range.lowerBound, range.upperBound)
+            j.pointee.limited = 1
+        }
+    }
+}
