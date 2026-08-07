@@ -1,4 +1,4 @@
-// Sources/mujoco-rl-demo/PPOTrainer.swift
+// Sources/MLXPolicyTraining/PPOTrainer.swift
 import MLX
 import MLXNN
 import MLXOptimizers
@@ -23,8 +23,8 @@ final class ValueNetwork: Module {
 /// iteration. The "old" log-probs are the ones `collectBatch` already
 /// recorded at rollout time using this same weight snapshot, so no separate
 /// old-policy pass is needed.
-final class PPOTrainer {
-    let policy: GaussianPolicy
+public final class PPOTrainer {
+    public let policy: GaussianPolicy
     private let valueNetwork: ValueNetwork
     private let policyOptimizer: Adam
     private let valueOptimizer: Adam
@@ -32,13 +32,19 @@ final class PPOTrainer {
     private let clipEpsilon: Float
     private let epochs: Int
     private let observationDimensions: Int
+    private let actionDimensions: Int
 
-    init(
-        observationDimensions: Int, hiddenDimensions: Int, policyLearningRate: Float,
-        valueLearningRate: Float, gamma: Float, clipEpsilon: Float, epochs: Int
+    public init(
+        observationDimensions: Int, hiddenDimensions: Int, actionDimensions: Int,
+        policyLearningRate: Float, valueLearningRate: Float, gamma: Float,
+        clipEpsilon: Float, epochs: Int
     ) {
         self.observationDimensions = observationDimensions
-        self.policy = GaussianPolicy(observationDimensions: observationDimensions, hiddenDimensions: hiddenDimensions)
+        self.actionDimensions = actionDimensions
+        self.policy = GaussianPolicy(
+            observationDimensions: observationDimensions, hiddenDimensions: hiddenDimensions,
+            actionDimensions: actionDimensions
+        )
         self.valueNetwork = ValueNetwork(observationDimensions: observationDimensions, hiddenDimensions: hiddenDimensions)
         self.policyOptimizer = Adam(learningRate: policyLearningRate)
         self.valueOptimizer = Adam(learningRate: valueLearningRate)
@@ -49,7 +55,7 @@ final class PPOTrainer {
     }
 
     @discardableResult
-    func trainStep(trajectories: [Trajectory]) -> (policyLoss: Float, valueLoss: Float) {
+    public func trainStep(trajectories: [Trajectory]) -> (policyLoss: Float, valueLoss: Float) {
         var flatObservations: [Float] = []
         var flatActions: [Float] = []
         var flatOldLogProbs: [Float] = []
@@ -60,12 +66,14 @@ final class PPOTrainer {
             for observation in trajectory.observations {
                 flatObservations.append(contentsOf: observation)
             }
-            flatActions.append(contentsOf: trajectory.actions)
+            for action in trajectory.actions {
+                flatActions.append(contentsOf: action)
+            }
             flatOldLogProbs.append(contentsOf: trajectory.logProbs)
         }
-        let count = flatActions.count
+        let count = flatOldLogProbs.count
         let observationsArray = MLXArray(flatObservations, [count, observationDimensions])
-        let actionsArray = MLXArray(flatActions, [count, 1])
+        let actionsArray = MLXArray(flatActions, [count, actionDimensions])
         let oldLogProbsArray = MLXArray(flatOldLogProbs, [count, 1])
         let returnsArray = MLXArray(flatReturns, [count, 1])
 

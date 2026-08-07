@@ -1,18 +1,26 @@
-// Sources/mujoco-rl-demo/ReinforceTrainer.swift
+// Sources/MLXPolicyTraining/ReinforceTrainer.swift
 import MLX
 import MLXNN
 import MLXOptimizers
 import MuJoCoRLEnv
 
-final class ReinforceTrainer {
-    let policy: GaussianPolicy
+public final class ReinforceTrainer {
+    public let policy: GaussianPolicy
     private let optimizer: Adam
     private let gamma: Float
     private let observationDimensions: Int
+    private let actionDimensions: Int
 
-    init(observationDimensions: Int, hiddenDimensions: Int, learningRate: Float, gamma: Float) {
+    public init(
+        observationDimensions: Int, hiddenDimensions: Int, actionDimensions: Int,
+        learningRate: Float, gamma: Float
+    ) {
         self.observationDimensions = observationDimensions
-        self.policy = GaussianPolicy(observationDimensions: observationDimensions, hiddenDimensions: hiddenDimensions)
+        self.actionDimensions = actionDimensions
+        self.policy = GaussianPolicy(
+            observationDimensions: observationDimensions, hiddenDimensions: hiddenDimensions,
+            actionDimensions: actionDimensions
+        )
         self.optimizer = Adam(learningRate: learningRate)
         self.gamma = gamma
         eval(policy)
@@ -21,7 +29,7 @@ final class ReinforceTrainer {
     /// Discounted returns with a batch-mean baseline; one Adam step over the
     /// whole batch.
     @discardableResult
-    func trainStep(trajectories: [Trajectory]) -> Float {
+    public func trainStep(trajectories: [Trajectory]) -> Float {
         var flatObservations: [Float] = []
         var flatActions: [Float] = []
         var flatReturns: [Float] = []
@@ -31,14 +39,16 @@ final class ReinforceTrainer {
             for observation in trajectory.observations {
                 flatObservations.append(contentsOf: observation)
             }
-            flatActions.append(contentsOf: trajectory.actions)
+            for action in trajectory.actions {
+                flatActions.append(contentsOf: action)
+            }
         }
-        let count = flatActions.count
+        let count = trajectories.reduce(0) { $0 + $1.actions.count }
         let baseline = flatReturns.reduce(0, +) / Float(flatReturns.count)
         let advantages = flatReturns.map { $0 - baseline }
 
         let observationsArray = MLXArray(flatObservations, [count, observationDimensions])
-        let actionsArray = MLXArray(flatActions, [count, 1])
+        let actionsArray = MLXArray(flatActions, [count, actionDimensions])
         let advantagesArray = MLXArray(advantages, [count, 1])
 
         func loss(model: GaussianPolicy, args: (MLXArray, MLXArray, MLXArray)) -> [MLXArray] {

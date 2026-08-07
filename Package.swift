@@ -77,18 +77,26 @@ var dependencies: [Package.Dependency] = [
 dependencies.append(.package(url: "https://github.com/ml-explore/mlx-swift", from: "0.31.6"))
 
 targets.append(
-    .executableTarget(
-        name: "MujocoRLDemo",
+    .target(
+        name: "MLXPolicyTraining",
         dependencies: [
             "MuJoCoRLEnv",
             .product(name: "MLX", package: "mlx-swift"),
             .product(name: "MLXNN", package: "mlx-swift"),
             .product(name: "MLXOptimizers", package: "mlx-swift"),
         ],
+        path: "Sources/MLXPolicyTraining"
+    )
+)
+targets.append(.testTarget(name: "MLXPolicyTrainingTests", dependencies: ["MLXPolicyTraining", "MuJoCoRLEnv"]))
+targets.append(
+    .executableTarget(
+        name: "MujocoRLDemo",
+        dependencies: ["MuJoCoRLEnv", "MLXPolicyTraining"],
         path: "Sources/mujoco-rl-demo"
     )
 )
-targets.append(.testTarget(name: "MujocoRLDemoTests", dependencies: ["MujocoRLDemo", "MuJoCoRLEnv"]))
+products.append(.library(name: "MLXPolicyTraining", targets: ["MLXPolicyTraining"]))
 products.append(.executable(name: "mujoco-rl-demo", targets: ["MujocoRLDemo"]))
 #endif
 
