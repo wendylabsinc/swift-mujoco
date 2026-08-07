@@ -19,15 +19,42 @@ var targets: [Target] = [
     .testTarget(name: "WendyMuJoCoTests", dependencies: ["WendyMuJoCo", "MuJoCo"]),
     .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo"]),
     .testTarget(name: "MuJoCoRLEnvTests", dependencies: ["MuJoCoRLEnv", "MuJoCo"]),
+    .executableTarget(
+        name: "WendyWorldSimServer",
+        dependencies: [
+            "WendyMuJoCo",
+            .product(name: "Hummingbird", package: "hummingbird"),
+            .product(name: "NIOCore", package: "swift-nio"),
+        ],
+        path: "Sources/wendy-worldsim-server",
+        plugins: [.plugin(name: "JSONSchemaPlugin", package: "swift-json-schema")]
+    ),
+    .testTarget(
+        name: "WendyWorldSimServerTests",
+        dependencies: [
+            "WendyWorldSimServer",
+            .product(name: "HummingbirdTesting", package: "hummingbird"),
+            .product(name: "NIOCore", package: "swift-nio"),
+            .product(name: "NIOFoundationCompat", package: "swift-nio"),
+        ]
+    ),
 ]
 
 var products: [Product] = [
     .library(name: "MuJoCo", targets: ["MuJoCo"]),
     .executable(name: "mujoco-demo", targets: ["MujocoDemo"]),
     .library(name: "WendyMuJoCo", targets: ["WendyMuJoCo"]),
+    .executable(name: "wendy-worldsim-server", targets: ["WendyWorldSimServer"]),
 ]
 
-var dependencies: [Package.Dependency] = []
+var dependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
+    .package(url: "https://github.com/wendylabsinc/swift-json-schema.git", from: "0.1.0"),
+    // Referenced directly (ByteBuffer in Routes.swift, Data(buffer:) in RoutesTests.swift) —
+    // SPM requires a package to be listed here to use its products, even though Hummingbird
+    // already depends on it transitively.
+    .package(url: "https://github.com/apple/swift-nio.git", from: "2.60.0"),
+]
 
 #if os(macOS)
 dependencies.append(.package(url: "https://github.com/ml-explore/mlx-swift", from: "0.31.6"))

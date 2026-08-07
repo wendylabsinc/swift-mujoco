@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SimListResponse",
+  "type": "object",
+  "properties": {
+    "sims": { "type": "array", "items": { "type": "string" } },
+    "current": { "type": ["string", "null"] }
+  },
+  "required": ["sims"]
+}

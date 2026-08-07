@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SimRunningResponse",
+  "type": "object",
+  "properties": {
+    "running": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RunningSim" }
+    },
+    "focus": { "type": ["string", "null"] }
+  },
+  "required": ["running"],
+  "$defs": {
+    "RunningSim": {
+      "type": "object",
+      "properties": {
+        "slot": { "type": "string" },
+        "file": { "type": "string" },
+        "title": { "type": ["string", "null"] }
+      },
+      "required": ["slot", "file"]
+    }
+  }
+}

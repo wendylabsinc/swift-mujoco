@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SimControlResponse",
+  "type": "object",
+  "properties": {
+    "ok": { "type": "boolean" },
+    "control": { "$ref": "#/$defs/SimControl" }
+  },
+  "required": ["ok"],
+  "$defs": {
+    "SimControl": {
+      "type": "object",
+      "properties": {
+        "paused": { "type": ["boolean", "null"] },
+        "step": { "type": ["integer", "null"] },
+        "reset": { "type": ["integer", "null"] }
+      }
+    }
+  }
+}
