@@ -240,7 +240,7 @@ public final class MjSpec {
 
     /// Maps a wrapper geom type to MuJoCo's. `.other` is rejected by `addGeom`
     /// before reaching here, so it is unreachable rather than silently a box.
-    private func cGeomType(_ t: MjModel.GeomType) -> mjtGeom {
+    func cGeomType(_ t: MjModel.GeomType) -> mjtGeom {
         switch t {
         case .plane: return mjGEOM_PLANE
         case .sphere: return mjGEOM_SPHERE
