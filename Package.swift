@@ -1,4 +1,5 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.3
+import Foundation
 import PackageDescription
 
 var targets: [Target] = [
@@ -12,9 +13,22 @@ var targets: [Target] = [
             .linkedFramework("OpenGL", .when(platforms: [.macOS]))
         ]
     ),
-    .target(name: "MuJoCo", dependencies: ["CMuJoCo", "CMuJoCoGL"]),
+    .target(
+        name: "MuJoCo",
+        dependencies: ["CMuJoCo", "CMuJoCoGL"],
+        swiftSettings: [
+            // Needed to *produce* a Span from our own accessors: the lifetime
+            // dependency that ties the returned Span to `self` is still spelled
+            // with the underscored `@_lifetime` and gated behind this feature in
+            // Swift 6.3. Consuming a Span needs neither.
+            .enableExperimentalFeature("Lifetimes")
+        ]
+    ),
     .executableTarget(name: "MujocoDemo", dependencies: ["MuJoCo", "WendyMuJoCo"], path: "Sources/mujoco-demo"),
-    .testTarget(name: "MuJoCoTests", dependencies: ["MuJoCo"]),
+    // CMuJoCo is a direct test dependency so the quaternion tests can compare the
+    // Swift helpers against mju_subQuat/mju_negQuat/mju_rotVecQuat themselves,
+    // rather than against a second Swift reimplementation of the same formula.
+    .testTarget(name: "MuJoCoTests", dependencies: ["MuJoCo", "CMuJoCo"]),
     .target(name: "WendyMuJoCo", dependencies: ["MuJoCo", "CMuJoCo"]),
     .testTarget(name: "WendyMuJoCoTests", dependencies: ["WendyMuJoCo", "MuJoCo"]),
     .target(name: "MuJoCoRLEnv", dependencies: ["MuJoCo"]),
@@ -70,8 +84,23 @@ var dependencies: [Package.Dependency] = [
     .package(url: "https://github.com/apple/swift-nio.git", from: "2.60.0"),
 ]
 
-#if os(macOS)
-dependencies.append(.package(url: "https://github.com/ml-explore/mlx-swift", from: "0.31.6"))
+// The MLX-backed RL demo is opt-in via `MUJOCO_RL_DEMO=1`, NOT `#if os(macOS)`.
+//
+// A manifest's `#if os(...)` describes the machine *running SwiftPM*, not the
+// build target. On a Mac cross-compiling for Linux ARM64 — exactly what
+// `wendy run` does when it builds a Swift app for a device — `#if os(macOS)` is
+// true, so MujocoRLDemo and mlx-swift (Metal-only) were pulled into a Linux
+// build graph and broke it. Linux CI never caught this because Linux CI builds
+// *on* Linux, where the branch is correctly skipped.
+//
+// Build it with:  MUJOCO_RL_DEMO=1 swift build
+let buildRLDemo = ProcessInfo.processInfo.environment["MUJOCO_RL_DEMO"] == "1"
+
+if buildRLDemo {
+// Pinned exactly rather than `from:` because this dependency is conditional:
+// Package.resolved only carries pins for the *default* configuration, so a
+// range here would leave the opt-in build unpinned and non-reproducible.
+dependencies.append(.package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.31.6"))
 
 targets.append(
     .executableTarget(
@@ -87,11 +116,11 @@ targets.append(
 )
 targets.append(.testTarget(name: "MujocoRLDemoTests", dependencies: ["MujocoRLDemo", "MuJoCoRLEnv"]))
 products.append(.executable(name: "mujoco-rl-demo", targets: ["MujocoRLDemo"]))
-#endif
+}
 
 let package = Package(
     name: "swift-mujoco",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     products: products,
     dependencies: dependencies,
     targets: targets

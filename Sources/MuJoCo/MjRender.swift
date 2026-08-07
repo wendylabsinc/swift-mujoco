@@ -62,6 +62,66 @@ public struct RenderedFrame: Sendable {
     public let height: Int
 }
 
+/// Caller-owned destination for ``MjOffscreenRenderer/render(data:cameraId:into:)``.
+///
+/// `render(data:cameraId:)` returns a fresh `RenderedFrame`, which means two array
+/// allocations totalling about 1.7 MB for a 640x480 frame — roughly 50 MB/s of
+/// allocation churn at 30 fps, all of it immediately garbage. Hoist one of these
+/// out of the loop and reuse it:
+///
+/// ```swift
+/// var buffer = FrameBuffer(width: 640, height: 480)
+/// while running {
+///     mjStep(model, data)
+///     try renderer.render(data: data, cameraId: 0, into: &buffer)
+///     publish(buffer.rgb, buffer.depth)   // valid until the next render
+/// }
+/// ```
+///
+/// The buffers are plain `Array`s so they interoperate with everything; the point
+/// is that ownership sits with the caller and they are written in place.
+public struct FrameBuffer: Sendable {
+    /// Packed rgb8, `width * height * 3` bytes, top-down. Overwritten per render.
+    public private(set) var rgb: [UInt8]
+    /// Linear depth in metres, `width * height` floats, top-down. A pixel that hit
+    /// nothing holds `Float.infinity`. Overwritten per render.
+    public private(set) var depth: [Float]
+    public private(set) var width: Int
+    public private(set) var height: Int
+
+    public init(width: Int, height: Int) {
+        precondition(width > 0 && height > 0, "FrameBuffer: dimensions must be positive")
+        self.width = width
+        self.height = height
+        self.rgb = [UInt8](repeating: 0, count: width * height * 3)
+        self.depth = [Float](repeating: 0, count: width * height)
+    }
+
+    /// Resize in place. A no-op when the dimensions already match, so calling it
+    /// every frame is free and keeps the buffer in step with a resized renderer.
+    public mutating func resize(width newWidth: Int, height newHeight: Int) {
+        precondition(newWidth > 0 && newHeight > 0, "FrameBuffer: dimensions must be positive")
+        guard newWidth != width || newHeight != height else { return }
+        width = newWidth
+        height = newHeight
+        rgb = [UInt8](repeating: 0, count: newWidth * newHeight * 3)
+        depth = [Float](repeating: 0, count: newWidth * newHeight)
+    }
+
+    /// Copy out an owned `RenderedFrame`, for the cases that genuinely need to
+    /// retain the frame past the next render.
+    public func snapshot() -> RenderedFrame {
+        RenderedFrame(rgb: rgb, depth: depth, width: width, height: height)
+    }
+
+    /// Grants the renderer mutable access without exposing setters publicly.
+    fileprivate mutating func withStorage<R>(
+        _ body: (inout [UInt8], inout [Float]) -> R
+    ) -> R {
+        body(&rgb, &depth)
+    }
+}
+
 /// Renders MuJoCo cameras to memory with no window.
 ///
 /// Intentionally NOT `Sendable`: it owns a GL context that is current on one
@@ -157,8 +217,28 @@ public final class MjOffscreenRenderer {
         depthBuffer = [Float](repeating: 0, count: newWidth * newHeight)
     }
 
-    /// Render the model's camera `cameraId` at the current size.
+    /// Render the model's camera `cameraId` at the current size, returning an owned
+    /// frame.
+    ///
+    /// Allocates two arrays per call (~1.7 MB at 640x480). Convenient for one-shot
+    /// captures; for a render loop use ``render(data:cameraId:into:)`` and reuse a
+    /// ``FrameBuffer``.
     public func render(data: MjData, cameraId: Int) throws -> RenderedFrame {
+        var buffer = FrameBuffer(width: width, height: height)
+        try render(data: data, cameraId: cameraId, into: &buffer)
+        return buffer.snapshot()
+    }
+
+    /// Render into caller-owned storage, allocating nothing.
+    ///
+    /// `buffer` is resized to match the renderer if it does not already (a no-op in
+    /// the steady state), then the flip and depth linearisation write straight into
+    /// it. This is the loop-friendly form: the previous frame's storage is reused
+    /// rather than becoming garbage.
+    ///
+    /// `buffer.rgb`/`buffer.depth` stay valid until the next render into the same
+    /// buffer. Call ``FrameBuffer/snapshot()`` if you need to retain a frame longer.
+    public func render(data: MjData, cameraId: Int, into buffer: inout FrameBuffer) throws {
         precondition(data.model === model,
                      "MjOffscreenRenderer.render: data does not belong to the model this renderer was created with")
         guard cameraId >= 0 && cameraId < model.ncam else {
@@ -176,9 +256,22 @@ public final class MjOffscreenRenderer {
         mjr_render(viewport, &scene, &context)
         mjr_readPixels(&rgbBuffer, &depthBuffer, viewport, &context)
 
-        return RenderedFrame(rgb: flipVertically(rgbBuffer, bytesPerPixel: 3),
-                             depth: linearizeAndFlipDepth(depthBuffer),
-                             width: width, height: height)
+        buffer.resize(width: width, height: height)
+        let znear = Float(model.zNear)
+        let zfar = Float(model.zFar)
+        let reversed = context.readDepthMap == Int32(mjDEPTH_ZEROFAR.rawValue)
+        let w = width, h = height
+        rgbBuffer.withUnsafeBufferPointer { srcRGB in
+            depthBuffer.withUnsafeBufferPointer { srcDepth in
+                buffer.withStorage { dstRGB, dstDepth in
+                    Self.flipVertically(src: srcRGB, into: &dstRGB,
+                                        width: w, height: h, bytesPerPixel: 3)
+                    Self.linearizeAndFlipDepth(src: srcDepth, into: &dstDepth,
+                                               width: w, height: h,
+                                               znear: znear, zfar: zfar, reversed: reversed)
+                }
+            }
+        }
     }
 
     /// Re-establishes this renderer's GL context as current on the calling
@@ -200,42 +293,57 @@ public final class MjOffscreenRenderer {
 
     /// `mjr_readPixels` returns rows bottom-up (OpenGL convention). Flip so row
     /// 0 is the top of the image, which is what every image consumer expects.
-    private func flipVertically(_ src: [UInt8], bytesPerPixel: Int) -> [UInt8] {
+    ///
+    /// Writes into caller storage and copies row-wise with `memcpy` rather than
+    /// building a fresh Array and going through `replaceSubrange` on an
+    /// `ArraySlice` per row.
+    private static func flipVertically(src: UnsafeBufferPointer<UInt8>,
+                                       into dst: inout [UInt8],
+                                       width: Int, height: Int, bytesPerPixel: Int) {
         let stride = width * bytesPerPixel
-        var out = [UInt8](repeating: 0, count: src.count)
-        for row in 0..<height {
-            let from = (height - 1 - row) * stride
-            let to = row * stride
-            out.replaceSubrange(to..<(to + stride), with: src[from..<(from + stride)])
+        precondition(dst.count == stride * height,
+                     "flipVertically: destination is \(dst.count) bytes, need \(stride * height)")
+        guard let srcBase = src.baseAddress else { return }
+        dst.withUnsafeMutableBufferPointer { out in
+            guard let dstBase = out.baseAddress else { return }
+            for row in 0..<height {
+                let from = (height - 1 - row) * stride
+                let to = row * stride
+                dstBase.advanced(by: to)
+                    .update(from: srcBase.advanced(by: from), count: stride)
+            }
         }
-        return out
     }
 
     /// OpenGL hands back a nonlinear window-space depth in [0,1]. Convert to
-    /// metres and flip to top-down in one pass.
+    /// metres and flip to top-down in one pass, into caller storage.
     ///
     /// `context.readDepthMap` tells us which convention `mjr_readPixels` used:
     /// `mjDEPTH_ZERONEAR` (the common case) maps raw 0 -> znear, 1 -> zfar;
     /// `mjDEPTH_ZEROFAR` (a reversed-Z map some GL drivers pick for precision
     /// via `ARB_clip_control`) maps raw 1 -> znear, 0 -> zfar. We normalise to
     /// the ZERONEAR sense before linearising so one formula covers both.
-    private func linearizeAndFlipDepth(_ src: [Float]) -> [Float] {
-        let znear = Float(model.zNear)
-        let zfar = Float(model.zFar)
-        let reversed = context.readDepthMap == Int32(mjDEPTH_ZEROFAR.rawValue)
-        var out = [Float](repeating: 0, count: src.count)
-        for row in 0..<height {
-            let from = (height - 1 - row) * width
-            let to = row * width
-            for col in 0..<width {
-                let raw = src[from + col]
-                let z = reversed ? (1 - raw) : raw
-                // z == 1 means the depth buffer was never written: nothing there.
-                out[to + col] = z >= 1
-                    ? .infinity
-                    : znear * zfar / (zfar - z * (zfar - znear))
+    private static func linearizeAndFlipDepth(src: UnsafeBufferPointer<Float>,
+                                              into dst: inout [Float],
+                                              width: Int, height: Int,
+                                              znear: Float, zfar: Float, reversed: Bool) {
+        precondition(dst.count == width * height,
+                     "linearizeAndFlipDepth: destination is \(dst.count) floats, need \(width * height)")
+        guard let srcBase = src.baseAddress else { return }
+        dst.withUnsafeMutableBufferPointer { out in
+            guard let dstBase = out.baseAddress else { return }
+            for row in 0..<height {
+                let from = (height - 1 - row) * width
+                let to = row * width
+                for col in 0..<width {
+                    let raw = srcBase[from + col]
+                    let z = reversed ? (1 - raw) : raw
+                    // z == 1 means the depth buffer was never written: nothing there.
+                    dstBase[to + col] = z >= 1
+                        ? .infinity
+                        : znear * zfar / (zfar - z * (zfar - znear))
+                }
             }
         }
-        return out
     }
 }

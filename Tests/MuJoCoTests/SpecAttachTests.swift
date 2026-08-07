@@ -26,7 +26,7 @@ private let armXML = """
 
 @Test func parseXMLIntoSpecThenCompile() throws {
     let spec = try MjSpec(xml: armXML)
-    #expect(spec.findBodyNames().contains("link"))
+    #expect(try spec.findBodyNames().contains("link"))
     let m = try spec.compile()
     #expect(m.id(of: objBody, name: "link") != nil)
     #expect(m.njnt == 1)
@@ -54,7 +54,7 @@ private let armXML = """
     // mj_copySpec -> mj_compile -> mj_deleteSpec, and attach links by
     // reference, so this checks that path doesn't disturb the still-live
     // attachedChildren.
-    #expect(parent.findBodyNames().contains("a_link"))
+    #expect(try parent.findBodyNames().contains("a_link"))
     let parentXML = try parent.saveXML()
     #expect(parentXML.contains("a_link") && parentXML.contains("b_link"))
 }

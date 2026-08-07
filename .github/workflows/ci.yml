@@ -23,7 +23,7 @@ jobs:
       - name: Install Swift
         uses: swift-actions/setup-swift@v2
         with:
-          swift-version: "6.1"
+          swift-version: "6.3"
 
       - name: Install MuJoCo and a software GL stack
         env:
@@ -67,7 +67,11 @@ jobs:
 
   macos:
     name: macOS
-    runs-on: macos-15
+    # Must be >= the package's deployment target. Package.swift declares
+    # .macOS(.v26) so that Mat3 can store its nine doubles in an InlineArray, which
+    # is @available(macOS 26, *) — a macos-15 runner cannot execute the built tests.
+    # The Linux jobs are unaffected: `platforms:` only constrains Apple platforms.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
@@ -84,6 +88,12 @@ jobs:
       - name: Build and test
         env:
           PKG_CONFIG_PATH: /Users/runner/.local/lib/pkgconfig
+          # The MLX-backed RL demo is opt-in (see Package.swift). It used to be
+          # gated on `#if os(macOS)`, which describes the machine running SwiftPM
+          # rather than the build target — so cross-compiling to Linux from a Mac
+          # pulled Metal-only mlx-swift into the graph. Set it explicitly here so
+          # the demo target still gets compiled on the macOS job.
+          MUJOCO_RL_DEMO: "1"
         run: |
           swift build -v
           # MujocoRLDemoTests exercises mlx-swift, which can't execute under a
@@ -92,3 +102,18 @@ jobs:
           # `xcodebuild test` instead (see README's "RL sample (MLX-Swift)"
           # section) and never runs in CI.
           swift test -v --skip MujocoRLDemoTests
+
+      # Regression guard for the manifest gating: a Linux-targeted build from a
+      # macOS host must NOT pull in mlx-swift. `swift package describe` evaluates
+      # the manifest, so this catches a revert to `#if os(macOS)` without needing
+      # a Linux SDK installed on the runner.
+      - name: Manifest gating for the RL demo
+        env:
+          PKG_CONFIG_PATH: /Users/runner/.local/lib/pkgconfig
+        run: |
+          set -euo pipefail
+          if swift package describe --type json | grep -q '"mlx-swift"'; then
+            echo "mlx-swift is in the dependency graph without MUJOCO_RL_DEMO=1" >&2
+            exit 1
+          fi
+          MUJOCO_RL_DEMO=1 swift package describe --type json | grep -q '"mlx-swift"'

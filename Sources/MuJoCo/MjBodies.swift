@@ -39,6 +39,17 @@ extension MjData {
         return (0..<9).map { b[i*9 + $0] }
     }
 
+    /// Orientation of a body's frame as an inline-stored ``Mat3``.
+    ///
+    /// The allocation-free replacement for `xmat(_:)`/`bodyMat(_:)`, which each
+    /// build a fresh 9-element heap array per call. `Mat3` holds its nine doubles
+    /// inline, so this costs nothing but the copy.
+    public func bodyMatrix(_ i: Int) -> Mat3 {
+        precondition(i >= 0 && i < model.nbody)
+        let b = ptr.pointee.xmat!
+        return Mat3(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
     /// Cartesian position of a body's frame origin, world coordinates.
     /// Clearly-named forward of `xpos(_:)`, which sites and geoms would
     /// otherwise ambiguously share the name of (`sitePos`/`geomXpos` already
@@ -52,6 +63,15 @@ extension MjData {
     /// Orientation of a body's frame as a row-major 3x3 matrix.
     /// Clearly-named forward of `xmat(_:)`.
     public func bodyMat(_ i: Int) -> [Double] { xmat(i) }
+
+    /// Non-allocating view of a body's row-major 3x3 world orientation, valid
+    /// only for the duration of `body`. `xmat(_:)`/`bodyMat(_:)` allocate a fresh
+    /// 9-element Array per call.
+    public func withXmat<R>(_ i: Int, _ body: (UnsafeBufferPointer<Double>) -> R) -> R {
+        precondition(i >= 0 && i < model.nbody)
+        let b = ptr.pointee.xmat!
+        return body(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
 
     /// World position of a site — where IMUs and rangefinders are mounted.
     public func sitePos(_ i: Int) -> Vec3 {
@@ -67,8 +87,25 @@ extension MjData {
         return (0..<9).map { b[i*9 + $0] }
     }
 
-    /// World orientation of a site as a quaternion.
-    public func siteQuat(_ i: Int) -> Quat { mat2Quat(siteMat(i)) }
+    /// Non-allocating view of a site's row-major 3x3 world orientation, valid
+    /// only for the duration of `body`.
+    public func withSiteMat<R>(_ i: Int, _ body: (UnsafeBufferPointer<Double>) -> R) -> R {
+        precondition(i >= 0 && i < model.nsite)
+        let b = ptr.pointee.site_xmat!
+        return body(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
+    /// World orientation of a site as an inline-stored ``Mat3``. Allocation-free
+    /// counterpart of `siteMat(_:)`.
+    public func siteMatrix(_ i: Int) -> Mat3 {
+        precondition(i >= 0 && i < model.nsite)
+        let b = ptr.pointee.site_xmat!
+        return Mat3(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
+    /// World orientation of a site as a quaternion. Converts in place; allocates
+    /// nothing.
+    public func siteQuat(_ i: Int) -> Quat { withSiteMat(i) { mat2Quat($0) } }
 
     /// World position of a camera.
     public func camPos(_ i: Int) -> Vec3 {
@@ -84,10 +121,26 @@ extension MjData {
         return (0..<9).map { b[i*9 + $0] }
     }
 
+    /// Non-allocating view of a camera's row-major 3x3 world orientation, valid
+    /// only for the duration of `body`.
+    public func withCamMat<R>(_ i: Int, _ body: (UnsafeBufferPointer<Double>) -> R) -> R {
+        precondition(i >= 0 && i < model.ncam)
+        let b = ptr.pointee.cam_xmat!
+        return body(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
+    /// World orientation of a camera as an inline-stored ``Mat3``. Allocation-free
+    /// counterpart of `camMat(_:)`.
+    public func camMatrix(_ i: Int) -> Mat3 {
+        precondition(i >= 0 && i < model.ncam)
+        let b = ptr.pointee.cam_xmat!
+        return Mat3(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
     /// World orientation of a camera as a quaternion. Sites and geoms both
     /// have a quaternion accessor (`siteQuat`/`geomQuat`); this fills the
-    /// same gap for cameras.
-    public func camQuat(_ i: Int) -> Quat { mat2Quat(camMat(i)) }
+    /// same gap for cameras. Converts in place; allocates nothing.
+    public func camQuat(_ i: Int) -> Quat { withCamMat(i) { mat2Quat($0) } }
 
     /// Generalized accelerations. Allocates; use `withQacc` on the hot path.
     public var qacc: [Double] {

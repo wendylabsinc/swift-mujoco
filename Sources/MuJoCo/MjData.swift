@@ -14,7 +14,13 @@ public final class MjData {
 
     public init(_ model: MjModel) {
         self.model = model
-        self.ptr = mj_makeData(model.ptr)
+        guard let p = mj_makeData(model.ptr) else {
+            // mj_makeData only returns NULL when allocation fails (it routes
+            // other problems through mju_error). Trap here with a message rather
+            // than storing NULL and crashing later inside an accessor.
+            preconditionFailure("mj_makeData returned NULL: out of memory for a model with nq=\(model.nq), nv=\(model.nv)")
+        }
+        self.ptr = p
     }
     deinit { mj_deleteData(ptr) }
 
@@ -92,7 +98,32 @@ public final class MjData {
         let b = ptr.pointee.geom_xmat!   // mjtNum*, length ngeom*9, row-major
         return (0..<9).map { b[i*9 + $0] }
     }
-    public func geomQuat(_ i: Int) -> Quat { mat2Quat(geomXmat(i)) }
+
+    /// Non-allocating view of one geom's row-major 3x3 world orientation, valid
+    /// only for the duration of `body`. `geomXmat(_:)` allocates a fresh
+    /// 9-element Array per call, which a per-geom-per-frame loop cannot afford.
+    public func withGeomXmat<R>(_ i: Int, _ body: (UnsafeBufferPointer<Double>) -> R) -> R {
+        precondition(i >= 0 && i < model.ngeom)
+        let b = ptr.pointee.geom_xmat!
+        return body(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
+    /// World orientation of a geom as an inline-stored ``Mat3``. Allocation-free
+    /// counterpart of `geomXmat(_:)`.
+    public func geomMatrix(_ i: Int) -> Mat3 {
+        precondition(i >= 0 && i < model.ngeom)
+        let b = ptr.pointee.geom_xmat!
+        return Mat3(UnsafeBufferPointer(start: b + i*9, count: 9))
+    }
+
+    /// World orientation of a geom as a quaternion.
+    ///
+    /// Reads straight out of `mjData` and converts in place — no intermediate
+    /// `[Double]`/`Mat3` allocation, unlike the `mat2Quat(geomXmat(i))` this
+    /// replaces (three heap arrays per geom, per frame).
+    public func geomQuat(_ i: Int) -> Quat {
+        withGeomXmat(i) { mat2Quat($0) }
+    }
 
     public struct Contact: Sendable {
         public let geom1: Int, geom2: Int
@@ -103,6 +134,14 @@ public final class MjData {
 
     public var ncon: Int { Int(ptr.pointee.ncon) }
 
+    /// Whether `contacts(max:)` with this cap would drop contacts. Compare
+    /// `ncon` against the cap yourself for the count; this is the cheap
+    /// "did I lose data?" check for a caller that only needs the boolean.
+    public func contactsTruncated(max: Int = 64) -> Bool { ncon > max }
+
+    /// Up to `max` contacts. A contact-rich scene has more than the default cap;
+    /// the excess is dropped silently, so check ``contactsTruncated(max:)`` (or
+    /// compare ``ncon``) when completeness matters.
     public func contacts(max: Int = 64) -> [Contact] {
         let n = Swift.min(ncon, max)
         guard n > 0 else { return [] }

@@ -30,16 +30,23 @@ public final class MjSpec {
     private var attachedChildren: [MjSpec] = []
 
     public init(floor: Bool = true, light: Bool = true) {
-        self.ptr = mj_makeSpec()
-        let world = mjs_findBody(ptr, "world")
+        guard let p = mj_makeSpec() else {
+            preconditionFailure("mj_makeSpec returned NULL (out of memory)")
+        }
+        self.ptr = p
+        guard let world = mjs_findBody(ptr, "world") else {
+            preconditionFailure("a fresh mjSpec has no \"world\" body; MuJoCo version mismatch?")
+        }
         if light {
             _ = mjs_addLight(world, nil)
         }
         if floor {
-            let g = mjs_addGeom(world, nil)
-            g!.pointee.type = mjGEOM_PLANE
-            g!.pointee.size = (12, 12, 0.1)
-            g!.pointee.rgba = (0.26, 0.27, 0.32, 1)
+            guard let g = mjs_addGeom(world, nil) else {
+                preconditionFailure("mjs_addGeom returned NULL adding the default floor")
+            }
+            g.pointee.type = mjGEOM_PLANE
+            g.pointee.size = (12, 12, 0.1)
+            g.pointee.rgba = (0.26, 0.27, 0.32, 1)
         }
     }
 
@@ -69,22 +76,37 @@ public final class MjSpec {
 
     @discardableResult
     public func addBody(name: String, pos: [Double]) -> String {
-        let world = mjs_findBody(ptr, "world")
-        let b = mjs_addBody(world, nil)
-        _ = mjs_setName(b!.pointee.element, name)
-        b!.pointee.pos = (pos[0], pos[1], pos[2])
+        precondition(pos.count == 3, "addBody: pos needs 3 components, got \(pos.count)")
+        guard let world = mjs_findBody(ptr, "world") else {
+            preconditionFailure("addBody: this spec has no \"world\" body")
+        }
+        guard let b = mjs_addBody(world, nil) else {
+            preconditionFailure("addBody: mjs_addBody returned NULL")
+        }
+        _ = mjs_setName(b.pointee.element, name)
+        b.pointee.pos = (pos[0], pos[1], pos[2])
         return name
     }
 
     public func addGeom(type: MjModel.GeomType, size: [Double], pos: [Double],
                          rgba: [Double], toBody body: String? = nil) {
+        // `.other` is the read-side catch-all for geom types this wrapper does not
+        // model; it has no meaningful write-side mapping. It used to silently
+        // become a box, which quietly produced a different model than asked for.
+        precondition(type != .other,
+                     "addGeom: .other is not a constructible geom type (it is the read-side catch-all)")
+        precondition(size.count == 3, "addGeom: size needs 3 components, got \(size.count)")
+        precondition(pos.count == 3, "addGeom: pos needs 3 components, got \(pos.count)")
+        precondition(rgba.count == 4, "addGeom: rgba needs 4 components, got \(rgba.count)")
         let parent = mjs_findBody(ptr, body ?? "world")
         precondition(parent != nil, "addGeom: no body named \"\(body ?? "world")\" in this spec")
-        let g = mjs_addGeom(parent, nil)
-        g!.pointee.type = cGeomType(type)
-        g!.pointee.size = (size[0], size[1], size[2])
-        g!.pointee.pos = (pos[0], pos[1], pos[2])
-        g!.pointee.rgba = (Float(rgba[0]), Float(rgba[1]), Float(rgba[2]), Float(rgba[3]))
+        guard let g = mjs_addGeom(parent, nil) else {
+            preconditionFailure("addGeom: mjs_addGeom returned NULL")
+        }
+        g.pointee.type = cGeomType(type)
+        g.pointee.size = (size[0], size[1], size[2])
+        g.pointee.pos = (pos[0], pos[1], pos[2])
+        g.pointee.rgba = (Float(rgba[0]), Float(rgba[1]), Float(rgba[2]), Float(rgba[3]))
     }
 
     public func compile() throws -> MjModel {
@@ -131,23 +153,29 @@ public final class MjSpec {
     /// Add a site — where IMUs, rangefinders and touch sensors mount.
     public func addSite(name: String, pos: [Double], size: Double = 0.01,
                          toBody body: String = "world") {
+        precondition(pos.count == 3, "addSite: pos needs 3 components, got \(pos.count)")
         let parent = mjs_findBody(ptr, body)
         precondition(parent != nil, "addSite: no body named \"\(body)\" in this spec")
-        let s = mjs_addSite(parent, nil)
-        _ = mjs_setName(s!.pointee.element, name)
-        s!.pointee.pos = (pos[0], pos[1], pos[2])
-        s!.pointee.size = (size, size, size)
+        guard let s = mjs_addSite(parent, nil) else {
+            preconditionFailure("addSite: mjs_addSite returned NULL")
+        }
+        _ = mjs_setName(s.pointee.element, name)
+        s.pointee.pos = (pos[0], pos[1], pos[2])
+        s.pointee.size = (size, size, size)
     }
 
     /// Add a fixed camera.
     public func addCamera(name: String, pos: [Double], fovy: Double,
                            toBody body: String = "world") {
+        precondition(pos.count == 3, "addCamera: pos needs 3 components, got \(pos.count)")
         let parent = mjs_findBody(ptr, body)
         precondition(parent != nil, "addCamera: no body named \"\(body)\" in this spec")
-        let c = mjs_addCamera(parent, nil)
-        _ = mjs_setName(c!.pointee.element, name)
-        c!.pointee.pos = (pos[0], pos[1], pos[2])
-        c!.pointee.fovy = fovy
+        guard let c = mjs_addCamera(parent, nil) else {
+            preconditionFailure("addCamera: mjs_addCamera returned NULL")
+        }
+        _ = mjs_setName(c.pointee.element, name)
+        c.pointee.pos = (pos[0], pos[1], pos[2])
+        c.pointee.fovy = fovy
     }
 
     /// Every body name in this spec, world first.
@@ -158,9 +186,12 @@ public final class MjSpec {
     /// does not compose cleanly here without extra unwrapping across 3.x
     /// minors. Compiling a throwaway copy is correct and adequate for what
     /// callers need this for (name lookups before/after attach).
-    public func findBodyNames() -> [String] {
-        guard let m = try? compileCopy() else { return [] }
-        return m.bodyNames
+    ///
+    /// Throws rather than returning `[]` on a compile failure: an empty array and
+    /// "this spec does not compile" are very different answers, and swallowing
+    /// the latter turned a broken `attach` into a silently empty name list.
+    public func findBodyNames() throws -> [String] {
+        try compileCopy().bodyNames
     }
 
     /// Compile without consuming this spec, for read-only inspection.
@@ -185,14 +216,30 @@ public final class MjSpec {
             throw MjError("mj_compile failed: " + String(cString: mjs_getError(copy)))
         }
         defer { mj_deleteModel(m) }
-        var buf = [CChar](repeating: 0, count: 1 << 20)
-        var err = [CChar](repeating: 0, count: 1000)
-        guard mj_saveXMLString(copy, &buf, Int32(buf.count), &err, Int32(err.count)) >= 0 else {
-            throw MjError(err.withUnsafeBufferPointer { String(cString: $0.baseAddress!) })
+        // Grow the buffer instead of failing at a fixed 1 MiB: a model with any
+        // real mesh or keyframe content serialises past that, and the old code
+        // surfaced it as an opaque "buffer too small" error the caller could do
+        // nothing about. Cap the growth so a pathological model can't OOM us.
+        var capacity = 1 << 20
+        let maxCapacity = 1 << 27          // 128 MiB of MJCF is not a real model
+        while true {
+            var buf = [CChar](repeating: 0, count: capacity)
+            var err = [CChar](repeating: 0, count: 1000)
+            if mj_saveXMLString(copy, &buf, Int32(buf.count), &err, Int32(err.count)) >= 0 {
+                return buf.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+            }
+            let message = err.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+            // MuJoCo reports an undersized destination via this message; anything
+            // else is a real failure and must not be retried.
+            guard message.lowercased().contains("too small"), capacity < maxCapacity else {
+                throw MjError(message)
+            }
+            capacity *= 4
         }
-        return buf.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
     }
 
+    /// Maps a wrapper geom type to MuJoCo's. `.other` is rejected by `addGeom`
+    /// before reaching here, so it is unreachable rather than silently a box.
     private func cGeomType(_ t: MjModel.GeomType) -> mjtGeom {
         switch t {
         case .plane: return mjGEOM_PLANE
@@ -202,7 +249,8 @@ public final class MjSpec {
         case .cylinder: return mjGEOM_CYLINDER
         case .box: return mjGEOM_BOX
         case .mesh: return mjGEOM_MESH
-        case .other: return mjGEOM_BOX
+        case .other:
+            preconditionFailure("cGeomType: .other has no MuJoCo geom type; addGeom rejects it")
         }
     }
 }
