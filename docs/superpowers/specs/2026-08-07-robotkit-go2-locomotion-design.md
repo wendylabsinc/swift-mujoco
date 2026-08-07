@@ -189,30 +189,37 @@ public protocol ObservationEncoding {
 
 public func collectEpisode<E: Environment>(
     makeEnvironment: () -> E, weights: PolicyWeights,
-    reward: (E.Observation) -> Float, isDone: (E.Observation) -> Bool,
-    maxSteps: Int, seed: UInt64
+    reward: (E.Observation) -> Float, maxSteps: Int, seed: UInt64
 ) -> Trajectory where E.Action == [Float], E.Observation: ObservationEncoding
 
 public func collectBatch<E: Environment>(
-    makeEnvironment: @escaping () -> E, weights: PolicyWeights, episodeCount: Int,
-    reward: @escaping (E.Observation) -> Float, isDone: @escaping (E.Observation) -> Bool,
-    maxSteps: Int, baseSeed: UInt64
+    makeEnvironment: @escaping @Sendable () -> E, weights: PolicyWeights, episodeCount: Int,
+    reward: @escaping @Sendable (E.Observation) -> Float, maxSteps: Int, baseSeed: UInt64
 ) async -> [Trajectory] where E.Action == [Float], E.Observation: ObservationEncoding
 ```
 
-`reward`/`isDone` are supplied by the caller (training-task-specific, not
-environment-specific — matches the "deterministic code computes reward from
-observations" split). `CartpoleEnv` is retrofitted to conform to
+Termination is `env.isTerminated || steps >= maxSteps` — checked directly
+against the environment `collectEpisode` already owns, not threaded through
+as a separate closure. An earlier draft of this design proposed a caller-
+supplied `isDone: (Observation) -> Bool` alongside `env.isTerminated`, but
+that can't actually express "stop when the environment says so" (it only
+sees the observation, not the environment instance) without duplicating
+`isTerminated`'s logic externally — so it's dropped. Only `reward` is
+supplied by the caller (genuinely training-task-specific — the same
+environment could be trained against different reward shaping). `CartpoleEnv`
+is retrofitted to conform to
 `Environment` with `Action == [Float]` (a single-element array, not bare
 `Float` — its `act(_:)` unwraps `action[0]` before calling the existing
 internal physics step) and `Observation == CartpoleObservation` (already
 gains `asArray` today, so it already satisfies `ObservationEncoding` as-is).
 Its existing `reset()`/`step()` physics logic is unchanged internally, just
-exposed through the protocol's shape — `act(_:)` folds the old `step`'s
-`reward`/`done` computation out to the caller, matching `maxSteps`/`isDone`
-above. This retrofit is both required (so `mujoco-rl-demo` keeps working
-through the generalized `Rollout.swift`) and serves as the validation that
-`Environment` actually fits a second, independent robot.
+exposed through the protocol's shape — the old `step`'s reward (always `1.0`)
+moves to the training call site's `reward` closure, and its `done` (out of
+bounds OR step-count cap) becomes `isTerminated`, computed the same way but
+now queried by `collectEpisode` directly against the environment instead of
+returned inline. This retrofit is both required (so `mujoco-rl-demo` keeps
+working through the generalized `Rollout.swift`) and serves as the
+validation that `Environment` actually fits a second, independent robot.
 
 ### 5. `Sources/Go2Kit/` (new library, macOS-only — depends on `MuJoCoRLEnv`'s
    `ObservationEncoding` and `RobotKit`'s `Environment`)
@@ -261,7 +268,7 @@ await RunModeKey.$current.withValue(learn ? .learn : .infer) {
     case .learn:
         // PPOTrainer(observationDimensions: 45, hiddenDimensions: H, actionDimensions: 12, ...)
         // loop: collectBatch(makeEnvironment: { Go2Environment() }, weights: trainer.policy.snapshot(),
-        //                     reward: <forward-velocity-tracking reward>, isDone: \.isTerminated, ...)
+        //                     reward: <forward-velocity-tracking reward>, maxSteps: ..., ...)
         //       trainer.trainStep(trajectories:)
         // save trainer.policy.snapshot() to disk (JSON or a simple binary format) on exit / periodically
     case .infer:
@@ -319,10 +326,10 @@ implementation-time tuning detail, not fixed here.
   scalar-action checkpoint for a 12-dim robot could have existed anyway,
   and `mujoco-rl-demo`'s own cartpole runs don't currently persist
   checkpoints to disk (trains fresh every run).
-- **Reward/termination coupling:** `collectEpisode`/`collectBatch`'s
-  `reward`/`isDone` closures run inside a `TaskGroup` worker per episode —
-  they must be `Sendable` (pure functions closing over no mutable state,
-  which the forward-velocity reward and `isTerminated` check both are).
+- **Reward closure concurrency:** `collectBatch`'s `makeEnvironment`/`reward`
+  closures run inside a `TaskGroup` worker per episode, so both are typed
+  `@Sendable` — pure functions closing over no mutable state, which the
+  forward-velocity reward is.
 
 ## Testing
 
