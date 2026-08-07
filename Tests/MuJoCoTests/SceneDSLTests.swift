@@ -195,3 +195,53 @@ import Testing
     #expect(model.id(of: objBody, name: "box0") != nil)
     #expect(model.id(of: objBody, name: "box2") != nil)
 }
+
+private let fallingCubeXML = """
+<mujoco>
+  <option timestep="0.002"/>
+  <worldbody>
+    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.2 0.23 0.28 1"/>
+    <body name="cube" pos="0 0 2">
+      <freejoint/>
+      <geom name="box" type="box" size="0.15 0.15 0.15" rgba="0.2 0.6 0.9 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+"""
+
+@Test func dslSceneMatchesHandWrittenFallingCubeXML() throws {
+    let dslScene = Scene {
+        Option(timestep: 0.002)
+        Geom(name: "floor", type: .plane, size: [5, 5, 0.1], rgba: [0.2, 0.23, 0.28, 1])
+        Body(name: "cube", pos: [0, 0, 2]) {
+            FreeJoint()
+            Geom(name: "box", type: .box, size: [0.15, 0.15, 0.15], rgba: [0.2, 0.6, 0.9, 1])
+        }
+    }
+    let fromDSL = try dslScene.compile()
+    let fromXML = try MjModel.load(xml: fallingCubeXML)
+
+    #expect(fromDSL.ngeom == fromXML.ngeom)
+    #expect(fromDSL.nbody == fromXML.nbody)
+    #expect(fromDSL.njnt == fromXML.njnt)
+    #expect(abs(fromDSL.timestep - fromXML.timestep) < 1e-9)
+
+    for i in 0..<fromDSL.ngeom {
+        #expect(fromDSL.geomType(i) == fromXML.geomType(i))
+        for (a, b) in zip(fromDSL.geomSize(i), fromXML.geomSize(i)) {
+            #expect(abs(a - b) < 1e-9)
+        }
+        for (a, b) in zip(fromDSL.geomRgba(i), fromXML.geomRgba(i)) {
+            #expect(abs(a - b) < 1e-5)
+        }
+    }
+    #expect(fromDSL.joints.map(\.type) == fromXML.joints.map(\.type))
+
+    let cubeDSL = try #require(fromDSL.id(of: objBody, name: "cube"))
+    let cubeXML = try #require(fromXML.id(of: objBody, name: "cube"))
+    let dDSL = MjData(fromDSL); mjForward(fromDSL, dDSL)
+    let dXML = MjData(fromXML); mjForward(fromXML, dXML)
+    let pDSL = dDSL.bodyPos(cubeDSL)
+    let pXML = dXML.bodyPos(cubeXML)
+    #expect(abs(pDSL.x - pXML.x) < 1e-9 && abs(pDSL.y - pXML.y) < 1e-9 && abs(pDSL.z - pXML.z) < 1e-9)
+}

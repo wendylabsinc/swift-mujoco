@@ -8,19 +8,6 @@ import WendyMuJoCo
 import WorldSimServerCore
 import Hummingbird
 
-let xml = """
-<mujoco>
-  <option timestep="0.002"/>
-  <worldbody>
-    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.2 0.23 0.28 1"/>
-    <body name="cube" pos="0 0 2">
-      <freejoint/>
-      <geom name="box" type="box" size="0.15 0.15 0.15" rgba="0.2 0.6 0.9 1"/>
-    </body>
-  </worldbody>
-</mujoco>
-"""
-
 let env = ProcessInfo.processInfo.environment
 let port = env["PORT"].flatMap(Int.init) ?? 8788
 let root = WorldSim.directory()
@@ -34,7 +21,20 @@ print("  GET /ctl/sim-running — Ctrl-C to stop")
 try await withThrowingTaskGroup(of: Void.self) { group in
     group.addTask { try await app.runService() }
     group.addTask {
-        let model = try MjModel.load(xml: xml)
+        // Declared here, not hoisted to a top-level `let`: `Scene` is a plain
+        // (non-`Sendable`) reference type, so building it inside the same
+        // task that compiles and steps the resulting `MjModel` keeps both on
+        // one isolation domain — matching the deliberate non-`Sendable`ness
+        // of `MjModel`/`MjSpec` themselves (see `MjModel.swift`).
+        let scene = Scene {
+            Option(timestep: 0.002)
+            Geom(name: "floor", type: .plane, size: [5, 5, 0.1], rgba: [0.2, 0.23, 0.28, 1])
+            Body(name: "cube", pos: [0, 0, 2]) {
+                FreeJoint()
+                Geom(name: "box", type: .box, size: [0.15, 0.15, 0.15], rgba: [0.2, 0.6, 0.9, 1])
+            }
+        }
+        let model = try scene.compile()
         let data = MjData(model)
         let initialState = data.getFullState()   // t=0, cube at rest height — replayed on every reset
         var recorder = WorldSimRecorder()
