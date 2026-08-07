@@ -4,3 +4,4 @@
 .venv-mujoco/
 .build-xcode
 .DS_Store
+.worktrees/
