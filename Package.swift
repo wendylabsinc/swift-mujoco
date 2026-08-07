@@ -13,7 +13,7 @@ var targets: [Target] = [
         ]
     ),
     .target(name: "MuJoCo", dependencies: ["CMuJoCo", "CMuJoCoGL"]),
-    .executableTarget(name: "MujocoDemo", dependencies: ["MuJoCo"], path: "Sources/mujoco-demo"),
+    .executableTarget(name: "MujocoDemo", dependencies: ["MuJoCo", "WendyMuJoCo"], path: "Sources/mujoco-demo"),
     .testTarget(name: "MuJoCoTests", dependencies: ["MuJoCo"]),
     .target(name: "WendyMuJoCo", dependencies: ["MuJoCo", "CMuJoCo"]),
     .testTarget(name: "WendyMuJoCoTests", dependencies: ["WendyMuJoCo", "MuJoCo"]),

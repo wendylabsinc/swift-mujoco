@@ -2,6 +2,7 @@
 // physics, read geom world poses, and detect the landing contact — all through
 // the Swift API, no C in sight.
 import MuJoCo
+import WendyMuJoCo
 
 func r(_ x: Double, _ places: Double = 1000) -> Double { (x * places).rounded() / places }
 
@@ -27,8 +28,10 @@ print("model: \(model.ngeom) geoms, \(model.nbody) bodies, dt=\(model.timestep)s
 
 print("  step     t(s)   altitude(m)   contacts")
 var landed = false
+var recorder = WorldSimRecorder()
 for step in 0...1200 {
     mjStep(model, data)
+    recorder.record(model: model, data: data, title: "mujoco-demo: falling cube", frame: step)
     let z = data.geomXpos(box).z
     if step % 100 == 0 {
         print("  \(String(repeating: " ", count: max(0, 4 - String(step).count)))\(step)   \(r(data.time))       \(r(z))         \(data.ncon)")
