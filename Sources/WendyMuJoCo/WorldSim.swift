@@ -9,6 +9,22 @@ public enum WorldSim {
         return URL(fileURLWithPath: "/tmp/wendy-worldsim", isDirectory: true)
     }
 
+    /// The slot name for this process: $WENDY_WORLDSIM_SLOT, or "default". Multiple
+    /// swift-mujoco processes can run concurrently, each in its own slot, so
+    /// wendy-worldsim-server can discover and serve them independently.
+    public static func slot(_ env: [String: String] = ProcessInfo.processInfo.environment) -> String {
+        if let v = env["WENDY_WORLDSIM_SLOT"], !v.isEmpty {
+            return v
+        }
+        return "default"
+    }
+
+    /// This process's slot directory: `directory()/slot()`. Every WorldSim write for a
+    /// single running sim belongs under one slot dir.
+    public static func slotDirectory() -> URL {
+        directory().appendingPathComponent(slot(), isDirectory: true)
+    }
+
     public static func path(_ fileName: String, in dir: URL) -> URL {
         dir.appendingPathComponent(fileName)
     }

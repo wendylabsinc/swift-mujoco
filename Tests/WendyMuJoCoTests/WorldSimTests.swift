@@ -24,3 +24,20 @@ import Foundation
     #expect(mjRound(1.234567, 2) == 1.23)
     #expect(mjRound(-0.0000004, 5) == 0.0)
 }
+
+@Test func slotDefaultsToDefault() {
+    #expect(WorldSim.slot([:]) == "default")
+}
+
+@Test func slotHonorsEnvOverride() {
+    #expect(WorldSim.slot(["WENDY_WORLDSIM_SLOT": "cartpole"]) == "cartpole")
+}
+
+@Test func slotTreatsEmptyOverrideAsUnset() {
+    #expect(WorldSim.slot(["WENDY_WORLDSIM_SLOT": ""]) == "default")
+}
+
+@Test func slotDirectoryNestsSlotUnderDirectory() {
+    let expected = WorldSim.directory().appendingPathComponent(WorldSim.slot(), isDirectory: true)
+    #expect(WorldSim.slotDirectory().path == expected.path)
+}
