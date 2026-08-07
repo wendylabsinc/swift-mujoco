@@ -56,6 +56,13 @@ func makeRouter(root: URL, heartbeatSeconds: TimeInterval = 5) -> Router<BasicRe
 private func slotFileResponse<Context: RequestContext>(root: URL, context: Context,
                                                         fileName: String) throws -> Response {
     guard let slot = context.parameters.get("slot") else { throw HTTPError(.badRequest) }
+    // Hummingbird's router matches `{slot}` against a single raw, percent-encoded path
+    // component with no normalization — a request for `/simslot/../scene.json` reaches this
+    // handler with `slot == ".."` verbatim (confirmed against Trie+resolve.swift). Reject
+    // anything that isn't a plain single path segment before it ever touches the filesystem.
+    guard !slot.isEmpty, slot != ".", slot != "..", !slot.contains("/") else {
+        throw HTTPError(.badRequest)
+    }
     let fileURL = root.appendingPathComponent(slot).appendingPathComponent(fileName)
     guard let data = try? Data(contentsOf: fileURL) else { throw HTTPError(.notFound) }
     return Response(status: .ok, headers: [.contentType: "application/json"],

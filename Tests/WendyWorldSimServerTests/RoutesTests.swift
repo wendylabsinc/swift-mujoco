@@ -84,6 +84,25 @@ private func withTempRoot(_ body: (URL) async throws -> Void) async throws {
     }
 }
 
+@Test func sceneJsonRejectsPathTraversalInSlot() async throws {
+    try await withTempRoot { root in
+        // Plant a file just outside `root` (a sibling `scene.json`) so that if the traversal
+        // guard in slotFileResponse were missing or broken, the naive
+        // `root.appendingPathComponent(slot)` join for slot == ".." would resolve to `root`'s
+        // parent directory and this file would be served back with a 200 instead of a 400.
+        let secret = root.deletingLastPathComponent().appendingPathComponent("scene.json")
+        try Data(#"{"title":"should never be served"}"#.utf8).write(to: secret)
+        defer { try? FileManager.default.removeItem(at: secret) }
+
+        let app = Application(router: makeRouter(root: root))
+        try await app.test(.router) { client in
+            try await client.execute(uri: "/simslot/../scene.json", method: .get) { response in
+                #expect(response.status == .badRequest)
+            }
+        }
+    }
+}
+
 @Test func simOpenIsANoOpThatReturns501() async throws {
     try await withTempRoot { root in
         let app = Application(router: makeRouter(root: root))
