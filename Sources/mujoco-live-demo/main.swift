@@ -52,6 +52,6 @@ try await withThrowingTaskGroup(of: Void.self) { group in
             try await Task.sleep(nanoseconds: stepNanos)
         }
     }
+    defer { group.cancelAll() }
     try await group.next()
-    group.cancelAll()
 }
