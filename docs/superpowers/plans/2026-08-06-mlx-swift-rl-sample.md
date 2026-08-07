@@ -88,10 +88,12 @@ let package = Package(
     name: "swift-mujoco",
     platforms: [.macOS(.v14)],
     products: products,
-    targets: targets,
-    dependencies: dependencies
+    dependencies: dependencies,
+    targets: targets
 )
 ```
+
+(`dependencies:` must precede `targets:` here — Swift requires labeled arguments in the initializer's declared order, and `Package.init` declares `dependencies` before `targets`.)
 
 - [ ] **Step 2: Resolve and build**
 
@@ -125,10 +127,15 @@ import Testing
     #expect(true)
 }
 EOF
+mkdir -p Sources/MuJoCoRLEnv
+cat > Sources/MuJoCoRLEnv/Placeholder.swift <<'EOF'
+// Replaced by Task 2 — SwiftPM requires a library target to have at least
+// one source file.
+EOF
 swift build
 swift test
 ```
-Expected: both commands succeed; the two placeholder tests pass. (Later tasks replace these placeholder files' content — the files themselves stay, since SwiftPM's default test target discovery requires at least one file to exist for `swift build`/`swift test` to succeed on a target with no sources yet.)
+Expected: both commands succeed; the two placeholder tests pass. (Later tasks replace these placeholder files' content — the files themselves stay, since SwiftPM's default test target discovery requires at least one file to exist for `swift build`/`swift test` to succeed on a target with no sources yet, and the `MuJoCoRLEnv` library target needs a source file too, not just its test target.)
 
 - [ ] **Step 3: Commit**
 
@@ -143,6 +150,7 @@ git commit -m "build: scaffold MuJoCoRLEnv and MujocoRLDemo targets for the MLX-
 
 **Files:**
 - Create: `Sources/MuJoCoRLEnv/CartpoleEnv.swift`
+- Delete: `Sources/MuJoCoRLEnv/Placeholder.swift` (Task 1's scaffolding stand-in — no longer needed once this target has real source)
 - Test: `Tests/MuJoCoRLEnvTests/CartpoleEnvTests.swift` (replaces the Task 1 placeholder)
 
 **Interfaces:**
@@ -312,6 +320,7 @@ Expected: PASS (all 4 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
+git rm Sources/MuJoCoRLEnv/Placeholder.swift
 git add Sources/MuJoCoRLEnv/CartpoleEnv.swift Tests/MuJoCoRLEnvTests/CartpoleEnvTests.swift
 git commit -m "feat: add CartpoleEnv balance task to MuJoCoRLEnv"
 ```
