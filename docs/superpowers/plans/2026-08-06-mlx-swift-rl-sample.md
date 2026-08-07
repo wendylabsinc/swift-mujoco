@@ -667,15 +667,16 @@ git commit -m "feat: add discounted returns and parallel rollout collection"
 
 ---
 
-### Task 5: `GaussianPolicy` MLX module + weight-snapshot bridge
+### Task 5: `GaussianPolicy` MLX module + weight-snapshot bridge + shared log-prob helper
 
 **Files:**
 - Create: `Sources/mujoco-rl-demo/GaussianPolicy.swift`
+- Create: `Sources/mujoco-rl-demo/GaussianLogProb.swift`
 - Test: `Tests/MujocoRLDemoTests/GaussianPolicyTests.swift` (replaces the Task 1 placeholder)
 
 **Interfaces:**
-- Produces (internal to `MujocoRLDemo`, no `public` needed — this is an executable target): `final class GaussianPolicy: Module` (`@ModuleInfo var fc1: Linear`, `@ModuleInfo var fc2: Linear`, `var logStd: MLXArray`, `init(observationDimensions: Int, hiddenDimensions: Int)`, `func callAsFunction(_ x: MLXArray) -> MLXArray`), `extension GaussianPolicy { func snapshot() -> PolicyWeights }`.
-- Consumes: `PolicyWeights`, `policyForward` (from `MuJoCoRLEnv`, Task 3); `Module`, `Linear`, `@ModuleInfo` (MLXNN); `MLXArray`, `tanh` (MLX).
+- Produces (internal to `MujocoRLDemo`, no `public` needed — this is an executable target): `final class GaussianPolicy: Module` (`@ModuleInfo var fc1: Linear`, `@ModuleInfo var fc2: Linear`, `var logStd: MLXArray`, `init(observationDimensions: Int, hiddenDimensions: Int)`, `func callAsFunction(_ x: MLXArray) -> MLXArray`), `extension GaussianPolicy { func snapshot() -> PolicyWeights }`, `func gaussianLogProbMLX(actions: MLXArray, mean: MLXArray, std: MLXArray) -> MLXArray`. `gaussianLogProbMLX` is the MLX-array counterpart of `MuJoCoRLEnv`'s scalar `gaussianLogProb` — both `ReinforceTrainer` (Task 6) and `PPOTrainer` (Task 7) call this shared helper for their loss closures instead of each inlining the formula.
+- Consumes: `PolicyWeights`, `policyForward`, `gaussianLogProb` (from `MuJoCoRLEnv`, Task 3); `Module`, `Linear`, `@ModuleInfo` (MLXNN); `MLXArray`, `tanh`, `exp`, `log`, `square` (MLX).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -710,6 +711,19 @@ import MuJoCoRLEnv
     #expect(weights.inputDimensions == 4)
     #expect(weights.hiddenDimensions == 8)
 }
+
+@Test func gaussianLogProbMLXMatchesScalarImplementation() {
+    let mean: Float = 0.5
+    let std: Float = 1.2
+    let action: Float = -0.3
+    let mlxResult = gaussianLogProbMLX(
+        actions: MLXArray([action], [1, 1]),
+        mean: MLXArray([mean], [1, 1]),
+        std: MLXArray([std], [1, 1])
+    ).item(Float.self)
+    let scalarResult = gaussianLogProb(action: action, mean: mean, std: std)
+    #expect(abs(mlxResult - scalarResult) < 1e-4)
+}
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -721,7 +735,22 @@ swift test --filter GaussianPolicyTests
 ```
 Expected: FAIL to compile — `GaussianPolicy` doesn't exist yet.
 
-- [ ] **Step 3: Write `GaussianPolicy.swift`**
+- [ ] **Step 3: Write `GaussianLogProb.swift`**
+
+```swift
+// Sources/mujoco-rl-demo/GaussianLogProb.swift
+import MLX
+
+/// MLX-array Gaussian log-probability — the array counterpart of
+/// `MuJoCoRLEnv`'s scalar `gaussianLogProb`, used inside both trainers'
+/// gradient-tracked loss closures so the formula lives in exactly one place.
+func gaussianLogProbMLX(actions: MLXArray, mean: MLXArray, std: MLXArray) -> MLXArray {
+    let variance = square(std)
+    return -0.5 * log(2 * Float.pi * variance) - square(actions - mean) / (2 * variance)
+}
+```
+
+- [ ] **Step 4: Write `GaussianPolicy.swift`**
 
 ```swift
 // Sources/mujoco-rl-demo/GaussianPolicy.swift
@@ -774,20 +803,20 @@ extension GaussianPolicy {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [ ] **Step 5: Run the tests to verify they pass**
 
 Run:
 ```bash
 export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
 swift test --filter GaussianPolicyTests
 ```
-Expected: PASS (both tests). If `snapshotMatchesLiveMLXForwardPass` fails on the flattening-order assumption, the fix is in `policyForward` (Task 3) or here, not in the test.
+Expected: PASS (all three tests). If `snapshotMatchesLiveMLXForwardPass` fails on the flattening-order assumption, the fix is in `policyForward` (Task 3) or here, not in the test.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add Sources/mujoco-rl-demo/GaussianPolicy.swift Tests/MujocoRLDemoTests/GaussianPolicyTests.swift
-git commit -m "feat: add GaussianPolicy MLX module with rollout-weight snapshotting"
+git add Sources/mujoco-rl-demo/GaussianPolicy.swift Sources/mujoco-rl-demo/GaussianLogProb.swift Tests/MujocoRLDemoTests/GaussianPolicyTests.swift
+git commit -m "feat: add GaussianPolicy MLX module, rollout-weight snapshotting, and shared log-prob helper"
 ```
 
 ---
@@ -801,7 +830,7 @@ git commit -m "feat: add GaussianPolicy MLX module with rollout-weight snapshott
 
 **Interfaces:**
 - Produces: `final class ReinforceTrainer` (`let policy: GaussianPolicy`, `init(observationDimensions: Int, hiddenDimensions: Int, learningRate: Float, gamma: Float)`, `@discardableResult func trainStep(trajectories: [Trajectory]) -> Float`).
-- Consumes: `GaussianPolicy` (Task 5); `Trajectory`, `discountedReturns`, `collectBatch` (Task 4); `Adam`, `valueAndGrad`, `MLXArray`, `exp`, `log`, `square` (MLX/MLXOptimizers).
+- Consumes: `GaussianPolicy`, `gaussianLogProbMLX` (Task 5); `Trajectory`, `discountedReturns`, `collectBatch` (Task 4); `Adam`, `valueAndGrad`, `MLXArray`, `exp` (MLX/MLXOptimizers).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -895,8 +924,7 @@ final class ReinforceTrainer {
             let (observations, actions, advantages) = args
             let mean = model(observations)
             let std = exp(model.logStd)
-            let variance = square(std)
-            let logProb = -0.5 * log(2 * Float.pi * variance) - square(actions - mean) / (2 * variance)
+            let logProb = gaussianLogProbMLX(actions: actions, mean: mean, std: std)
             let lossValue = -(logProb * advantages).mean()
             return [lossValue]
         }
@@ -984,7 +1012,7 @@ git commit -m "feat: add ReinforceTrainer and wire up the reinforce CLI path"
 
 **Interfaces:**
 - Produces: `final class ValueNetwork: Module` (internal to this file), `final class PPOTrainer` (`let policy: GaussianPolicy`, `init(observationDimensions: Int, hiddenDimensions: Int, policyLearningRate: Float, valueLearningRate: Float, gamma: Float, clipEpsilon: Float, epochs: Int)`, `@discardableResult func trainStep(trajectories: [Trajectory]) -> (policyLoss: Float, valueLoss: Float)`).
-- Consumes: `GaussianPolicy` (Task 5); `Trajectory`, `discountedReturns`, `collectBatch` (Task 4); `Adam`, `valueAndGrad`, `MLXArray`, `exp`, `log`, `square`, `clip`, `minimum` (MLX/MLXOptimizers); `Module`, `Linear`, `@ModuleInfo` (MLXNN).
+- Consumes: `GaussianPolicy`, `gaussianLogProbMLX` (Task 5); `Trajectory`, `discountedReturns`, `collectBatch` (Task 4); `Adam`, `valueAndGrad`, `MLXArray`, `exp`, `square`, `clip`, `minimum` (MLX/MLXOptimizers); `Module`, `Linear`, `@ModuleInfo` (MLXNN).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1112,8 +1140,7 @@ final class PPOTrainer {
             let (observations, actions, oldLogProbs, advantages) = args
             let mean = model(observations)
             let std = exp(model.logStd)
-            let variance = square(std)
-            let newLogProbs = -0.5 * log(2 * Float.pi * variance) - square(actions - mean) / (2 * variance)
+            let newLogProbs = gaussianLogProbMLX(actions: actions, mean: mean, std: std)
             let ratio = exp(newLogProbs - oldLogProbs)
             let surrogate1 = ratio * advantages
             let surrogate2 = clip(ratio, min: 1 - self.clipEpsilon, max: 1 + self.clipEpsilon) * advantages
