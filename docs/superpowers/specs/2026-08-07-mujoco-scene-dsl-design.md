@@ -160,12 +160,22 @@ it just walks once at compile time.
   - `func xml() throws -> String` — `spec().saveXML()`, for debugging/parity
     checks against hand-written MJCF.
 - **`Option(timestep: Double)`**
-- **`Body(name: String? = nil, pos: [Double] = [0, 0, 0], quat: [Double]? = nil, @MjSceneBuilder children: () -> [MjSceneElement] = { })`**
-  — the default's empty closure body (zero statements, not `{ [] }`) is
-  deliberate: a result-builder closure with an empty body resolves to a
-  zero-argument `buildBlock()` call; `{ [] }` would instead route the array
-  literal through `buildExpression(_: MjSceneElement)`, which doesn't
-  type-check against an array.
+- **`Body(name: String? = nil, pos: [Double] = [0, 0, 0], quat: [Double]? = nil, @MjSceneBuilder children: () -> [MjSceneElement] = { [] })`**
+  — corrected from an earlier draft of this doc, which claimed the default
+  should be `{ }` (empty body) and that `{ [] }` would fail to type-check.
+  That claim was backwards, confirmed by an isolated repro: the
+  `@resultBuilder` transform applies only to a closure passed at a call
+  site (where braces get the special treatment SwiftUI-style DSLs rely
+  on) — it does **not** apply to a default *parameter value* expression.
+  There, `{ }` is just an ordinary empty closure literal, which infers as
+  `() -> Void` and fails to match the declared `() -> [MjSceneElement]`;
+  `{ [] }` is an ordinary closure literal returning the `[MjSceneElement]`
+  array `[]` directly, no builder methods invoked at all, and type-checks
+  fine. The final whole-branch review flagged the `{ [] }` vs `{ }`
+  disagreement between code and docs; the fix round's implementer
+  re-verified this empirically before "fixing" the code to match the
+  (wrong) docs, caught the discrepancy, and left the code as `{ [] }` —
+  this doc is what was actually wrong.
 - **`Geom(name: String? = nil, type: MjModel.GeomType, size: [Double], pos: [Double] = [0, 0, 0], rgba: [Double] = [0.5, 0.5, 0.5, 1])`**
   — reuses `MjModel.GeomType`, already public; no new geom-type enum.
 - **`FreeJoint(name: String? = nil)`** — `mjs_addFreeJoint(parent)`.

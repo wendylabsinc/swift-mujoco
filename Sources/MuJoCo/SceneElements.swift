@@ -22,7 +22,7 @@ public struct Geom: MjSceneElement {
             preconditionFailure("Geom.apply: mjs_addGeom returned NULL")
         }
         if let name { _ = mjs_setName(g.pointee.element, name) }
-        spec.configureGeom(g, type: type, size: size, pos: pos, rgba: rgba)
+        spec.configureGeom(g, type: type, size: size, pos: pos, rgba: rgba, caller: "Geom")
     }
 }
 
@@ -31,6 +31,7 @@ public struct Geom: MjSceneElement {
 public struct Body: MjSceneElement {
     public let name: String?
     public let pos: [Double]
+    /// Orientation as a quaternion in MuJoCo's (w, x, y, z) component order.
     public let quat: [Double]?
     public let children: [MjSceneElement]
 
@@ -164,6 +165,7 @@ public struct Site: MjSceneElement {
 public struct Camera: MjSceneElement {
     public let name: String?
     public let pos: [Double]
+    /// Vertical field of view in **degrees**.
     public let fovy: Double
 
     public init(name: String? = nil, pos: [Double] = [0, 0, 0], fovy: Double = 45) {

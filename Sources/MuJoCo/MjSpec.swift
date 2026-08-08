@@ -90,26 +90,30 @@ public final class MjSpec {
 
     public func addGeom(type: MjModel.GeomType, size: [Double], pos: [Double],
                          rgba: [Double], toBody body: String? = nil) {
-        // `.other` is the read-side catch-all for geom types this wrapper does not
-        // model; it has no meaningful write-side mapping. It used to silently
-        // become a box, which quietly produced a different model than asked for.
-        precondition(type != .other,
-                     "addGeom: .other is not a constructible geom type (it is the read-side catch-all)")
         let parent = mjs_findBody(ptr, body ?? "world")
         precondition(parent != nil, "addGeom: no body named \"\(body ?? "world")\" in this spec")
         guard let g = mjs_addGeom(parent, nil) else {
             preconditionFailure("addGeom: mjs_addGeom returned NULL")
         }
-        configureGeom(g, type: type, size: size, pos: pos, rgba: rgba)
+        configureGeom(g, type: type, size: size, pos: pos, rgba: rgba, caller: "addGeom")
     }
 
     /// Configure an mjsGeom's type, size, position, and RGBA — shared logic between
     /// `addGeom` and `Geom.apply`. Validates array lengths upfront.
+    ///
+    /// - Parameter caller: the public-facing name to attribute precondition
+    ///   messages to — `"addGeom"` or `"Geom"` — so a failure names the API
+    ///   the caller actually used, not this internal helper.
     func configureGeom(_ g: UnsafeMutablePointer<mjsGeom>, type: MjModel.GeomType,
-                       size: [Double], pos: [Double], rgba: [Double]) {
-        precondition(size.count == 3, "configureGeom: size needs 3 components, got \(size.count)")
-        precondition(pos.count == 3, "configureGeom: pos needs 3 components, got \(pos.count)")
-        precondition(rgba.count == 4, "configureGeom: rgba needs 4 components, got \(rgba.count)")
+                       size: [Double], pos: [Double], rgba: [Double], caller: String) {
+        // `.other` is the read-side catch-all for geom types this wrapper does not
+        // model; it has no meaningful write-side mapping. It used to silently
+        // become a box, which quietly produced a different model than asked for.
+        precondition(type != .other,
+                     "\(caller): .other is not a constructible geom type (it is the read-side catch-all)")
+        precondition(size.count == 3, "\(caller): size needs 3 components, got \(size.count)")
+        precondition(pos.count == 3, "\(caller): pos needs 3 components, got \(pos.count)")
+        precondition(rgba.count == 4, "\(caller): rgba needs 4 components, got \(rgba.count)")
         g.pointee.type = cGeomType(type)
         g.pointee.size = (size[0], size[1], size[2])
         g.pointee.pos = (pos[0], pos[1], pos[2])
@@ -245,8 +249,9 @@ public final class MjSpec {
         }
     }
 
-    /// Maps a wrapper geom type to MuJoCo's. `.other` is rejected by `addGeom`
-    /// before reaching here, so it is unreachable rather than silently a box.
+    /// Maps a wrapper geom type to MuJoCo's. `.other` is rejected by
+    /// `configureGeom` before reaching here (on both the `addGeom` and
+    /// `Geom.apply` paths), so it is unreachable rather than silently a box.
     func cGeomType(_ t: MjModel.GeomType) -> mjtGeom {
         switch t {
         case .plane: return mjGEOM_PLANE
@@ -257,7 +262,7 @@ public final class MjSpec {
         case .box: return mjGEOM_BOX
         case .mesh: return mjGEOM_MESH
         case .other:
-            preconditionFailure("cGeomType: .other has no MuJoCo geom type; addGeom rejects it")
+            preconditionFailure("cGeomType: .other has no MuJoCo geom type; configureGeom rejects it")
         }
     }
 }
