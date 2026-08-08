@@ -61,8 +61,12 @@ public struct Go2Adapter: Sendable {
         return cmd
     }
 
-    /// Newtons above which a foot counts as loaded. The Go2's foot sensors read
-    /// small nonzero values when swinging, so zero would report false contacts.
+    /// Placeholder threshold, not a calibrated real-sensor value. The brief's
+    /// own test requires force=10 to register as contact, which forced this
+    /// down from the brief's originally-suggested 20 (a value chosen to
+    /// reject small nonzero swing noise). At `1`, realistic swing-noise
+    /// forces could register as false contact — revisit against actual Go2
+    /// foot-sensor noise during hardware bring-up.
     static let contactForceThreshold: Int16 = 1
     /// `0xFF` selects low-level (direct motor) control rather than sport mode.
     static let lowLevelFlag: UInt8 = 0xFF
