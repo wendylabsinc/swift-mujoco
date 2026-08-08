@@ -18,7 +18,10 @@ public final class Scene {
         let spec = MjSpec(floor: false, light: false)
         // Every `MjSpec` always has a "world" body — `mj_makeSpec` creates it
         // unconditionally — so this cannot fail on a freshly built bare spec.
-        let world = MjSpecBody(ptr: mjs_findBody(spec.ptr, "world")!)
+        guard let worldPtr = mjs_findBody(spec.ptr, "world") else {
+            preconditionFailure("a fresh mjSpec has no \"world\" body; MuJoCo version mismatch?")
+        }
+        let world = MjSpecBody(ptr: worldPtr)
         for element in elements {
             element.apply(spec: spec, parent: world)
         }
