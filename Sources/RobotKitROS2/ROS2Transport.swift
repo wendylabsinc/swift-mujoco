@@ -3,8 +3,10 @@ import SwiftROS2
 
 /// `MessageTransport` over real ROS 2 middleware.
 ///
-/// Publishers and subscriptions are created lazily per topic and cached, so a
-/// control loop that publishes every tick pays the setup cost once.
+/// Publishers are created lazily per topic and cached, so a control loop that
+/// publishes every tick pays the setup cost once. Subscriptions are NOT
+/// cached — each `subscribe` call creates a new underlying subscription, so
+/// callers should subscribe once per topic and reuse the returned stream.
 public actor ROS2Transport: MessageTransport {
     private let context: ROS2Context
     private let node: ROS2Node
