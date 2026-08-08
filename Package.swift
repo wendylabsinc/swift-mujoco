@@ -44,6 +44,8 @@ var targets: [Target] = [
         .product(name: "SwiftROS2", package: "swift-ros2"),
     ]),
     .testTarget(name: "RobotKitGo2Tests", dependencies: ["RobotKitGo2", "RobotKit"]),
+    .target(name: "RobotKitSim", dependencies: ["RobotKit", "RobotKitGo2", "MuJoCo"]),
+    .testTarget(name: "RobotKitSimTests", dependencies: ["RobotKitSim", "RobotKitGo2", "RobotKit", "MuJoCo"]),
     .target(
         name: "WorldSimServerCore",
         dependencies: [

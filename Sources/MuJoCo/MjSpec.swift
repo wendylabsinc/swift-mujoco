@@ -152,9 +152,41 @@ public final class MjSpec {
         guard let childWorld = mjs_findBody(child.ptr, "world") else {
             throw MjError("attach: child spec has no worldbody")
         }
-        guard mjs_attach(frame.pointee.element, childWorld.pointee.element,
-                          prefix, suffix) != nil else {
-            throw MjError("attach failed: " + String(cString: mjs_getError(ptr)))
+        // Passing childWorld's *own* element to mjs_attach would attach the
+        // worldbody itself as a wrapper node, nesting everything one level
+        // deeper than the child spec actually declares. That breaks MuJoCo's
+        // "free joint can only be used on top level" rule for any top-level
+        // freejoint body — i.e. any free-floating robot base, which is the
+        // common case for exactly the kind of spec this method exists to
+        // attach. Confirmed against MuJoCo's own reference Python bindings:
+        // `frame.attach_body(child.worldbody, ...)` reproduces this same
+        // compile-time error; attaching each of the worldbody's own direct
+        // children individually is what `Spec.attach(child, frame=...)`
+        // actually does under the hood, and is what compiles cleanly.
+        //
+        // `mjs_firstChild`/`mjs_nextChild` filter by a single concrete type —
+        // `mjOBJ_UNKNOWN` is not a wildcard (confirmed: it silently matches
+        // nothing, which would make this a no-op attach with no error at
+        // all). Loop once per type actually reachable as a direct child of a
+        // worldbody, so a robot's own top-level geoms/sites/cameras/lights
+        // (declared loose in worldbody, not nested in a body) come along
+        // too, not just its bodies.
+        //
+        // Collected eagerly into one array before attaching any of them:
+        // `mjs_attach` moves an element out of its source tree, which would
+        // invalidate an in-progress `mjs_nextChild` walk over the same list.
+        var topLevelChildren: [UnsafeMutablePointer<mjsElement>] = []
+        for type in [mjOBJ_BODY, mjOBJ_GEOM, mjOBJ_SITE, mjOBJ_CAMERA, mjOBJ_LIGHT] {
+            var next = mjs_firstChild(childWorld, type, 0)
+            while let current = next {
+                topLevelChildren.append(current)
+                next = mjs_nextChild(childWorld, current, 0)
+            }
+        }
+        for element in topLevelChildren {
+            guard mjs_attach(frame.pointee.element, element, prefix, suffix) != nil else {
+                throw MjError("attach failed: " + String(cString: mjs_getError(ptr)))
+            }
         }
         // Tie child's lifetime to ours: mjs_attach links by reference, and
         // mj_compile reads live from child.ptr, so it must outlive us.
