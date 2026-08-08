@@ -60,9 +60,12 @@ case "sim":
     let sim = try makeSimulator()
     sim.reset()
     var runtime = makeRuntime()
-    var command = adapter.lowCmd(
-        from: runtime.tick(observation: adapter.observation(
-            from: sim.lowState(), stamp: RobotTime(seconds: sim.time))))
+    // No priming tick: `runtime.tick` mutates the encoder's action history, so
+    // calling it here before the loop would desync it from `loopback` mode,
+    // where `RobotRuntime` is constructed fresh and its first tick sees zero
+    // history. Decimation is already true at step == 0, so the loop's own
+    // first iteration is genuinely the first tick in both modes.
+    var command = LowCmd()
 
     for step in 0..<steps {
         if step % Go2Simulator.controlDecimation == 0 {
