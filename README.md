@@ -13,11 +13,11 @@ a `mujoco` wheel available (e.g. Python 3.14) — use a Python 3.12 environment 
 This installs headers/lib into `$HOME/.local` (no `sudo` required) and writes
 `$HOME/.local/lib/pkgconfig/mujoco.pc`.
 
-Requires macOS 14+ on Apple platforms: `mlx-swift` (used only by the
-`MujocoRLDemo` target) needs macOS 14, and SwiftPM requires the package's
-declared platform floor to satisfy every dependency's minimum, so
-`Package.swift` declares `.macOS(.v14)` package-wide even though the
-`MuJoCo`/`WendyMuJoCo` libraries themselves don't need it.
+Requires macOS 26+ on Apple platforms: `Package.swift` declares
+`.macOS(.v26)` package-wide because `MuJoCo`'s `Mat3` uses `InlineArray`,
+which needs macOS 26 (see [Allocation behaviour](#allocation-behaviour)
+below for the full rationale). Linux is unaffected — `platforms:` only
+constrains Apple platforms, and Linux is where this actually deploys.
 
 ## Build & test
     export PKG_CONFIG_PATH=$HOME/.local/lib/pkgconfig
@@ -36,23 +36,28 @@ declared platform floor to satisfy every dependency's minimum, so
 - `mujoco-rl-demo` — REINFORCE and PPO trained against a cartpole balance
   task using [MLX-Swift](https://github.com/ml-explore/mlx-swift). macOS
   only (MLX is Metal-backed); the target and its `mlx-swift` dependency are
-  gated behind `#if os(macOS)` in `Package.swift` so Linux CI never sees
-  them.
+  gated behind the `MUJOCO_RL_DEMO=1` environment variable in
+  `Package.swift` — not `#if os(macOS)` (see
+  [RL sample (MLX-Swift)](#rl-sample-mlx-swift) below for why) — so a
+  default build never sees them.
 - `RobotKit` — sim-to-real framework: canonical robot state/command types, the
   observation encoder and action decoder that define the sim-to-real contract,
-  transports, and the control loop; also hosts the shared RL plumbing
-  (`Environment` protocol, rollout collection, run-mode signaling) used by the
-  cartpole and Go2 RL demos. `RobotKitGo2` adds Unitree Go2 messages, CRC, and
-  the adapter; `RobotKitSim` drives a MuJoCo Go2 that speaks the robot's own
-  wire messages; `RobotKitROS2` provides the DDS transport.
+  transports, and the control loop; also hosts the shared `Environment`
+  protocol and run-mode signaling (`RunMode`/`RunModeKey`) used by the
+  cartpole and Go2 RL demos. Rollout collection itself lives in
+  `Sources/MuJoCoRLEnv/Rollout.swift`, not here. `RobotKitGo2` adds Unitree
+  Go2 messages, CRC, and the adapter; `RobotKitSim` drives a MuJoCo Go2 that
+  speaks the robot's own wire messages; `RobotKitROS2` provides the DDS
+  transport.
 - `Go2Kit` — `Go2Environment`, a MuJoCo-backed Unitree Go2 quadruped driven
   by a joint-space PD controller, loading the real `unitree_go2` model via
-  `WendyMuJoCo.Menagerie`. macOS only, same reason as `MLXPolicyTraining`
-  below.
+  `WendyMuJoCo.Menagerie`. Gated behind `MUJOCO_RL_DEMO=1` in `Package.swift`
+  alongside the other RL-demo targets — not `#if os(macOS)` — even though it
+  has no direct MLX dependency of its own.
 - `MLXPolicyTraining` — MLX-Swift policy/value networks and PPO training
   step shared by `mujoco-rl-demo` and `go2-locomotion-demo`. macOS only
-  (MLX is Metal-backed), gated behind `#if os(macOS)` alongside the other
-  MLX-dependent targets.
+  (MLX is Metal-backed), gated behind `MUJOCO_RL_DEMO=1` in `Package.swift`
+  alongside the other RL-demo targets, not `#if os(macOS)`.
 - `go2-locomotion-demo` — trains a Go2 locomotion policy via PPO and runs it
   live. See [Go2 locomotion demo (MLX-Swift)](#go2-locomotion-demo-mlx-swift)
   below. macOS only, same reason as `mujoco-rl-demo`.
