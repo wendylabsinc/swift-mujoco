@@ -71,19 +71,21 @@ public struct ObservationEncoder: Sendable {
         return out
     }
 
-    /// World-frame down (0, 0, -1) expressed in the body frame: `R(q) · (0,0,-1)`,
-    /// applying the quaternion-to-matrix rotation directly (not its conjugate) —
-    /// the sign convention that matches `unitree_go/IMUState` orientation, where
-    /// rolling 90° about x maps world -z to body +y. Upright gives (0, 0, -1);
-    /// the vector tilts as the base does, which is how the policy perceives
-    /// orientation without an absolute yaw reference.
+    /// World-frame down (0, 0, -1) expressed in the body frame: `qᵀ · (0,0,-1)`,
+    /// i.e. rotating by the conjugate of `q`. This is the convention
+    /// `unitree_go/IMUState` orientation uses — it matches Unitree's own
+    /// reference deployment code (`unitree_rl_gym/deploy/deploy_mujoco/deploy_mujoco.py`,
+    /// `get_gravity_orientation`), where rolling 90° about x maps world -z to
+    /// body -y. Upright gives (0, 0, -1); the vector tilts as the base does,
+    /// which is how the policy perceives orientation without an absolute yaw
+    /// reference.
     static func projectedGravity(
         _ q: (Double, Double, Double, Double)
     ) -> (Double, Double, Double) {
         let (w, x, y, z) = q
-        // Rotate (0,0,-1) by q using the standard quaternion-to-matrix formula.
-        let vx = -2 * (x * z + w * y)
-        let vy = -2 * (y * z - w * x)
+        // Rotate (0,0,-1) by the conjugate of q.
+        let vx = -2 * (x * z - w * y)
+        let vy = -2 * (y * z + w * x)
         let vz = -(1 - 2 * (x * x + y * y))
         return (vx, vy, vz)
     }

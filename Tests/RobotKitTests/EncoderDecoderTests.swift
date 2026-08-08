@@ -88,9 +88,9 @@ private let defaultPose: [Double] = [
         contacts: Array(repeating: ContactReading(normalForce: 0, inContact: false), count: 4)
     )
     let v = encoder.encode(obs, commandedVelocity: (0, 0, 0))
-    // World -z rotated into a body rolled 90° about x becomes +y in body frame.
+    // World -z rotated into a body rolled 90° about x becomes -y in body frame.
     #expect(abs(v[3] - 0) < 1e-5)
-    #expect(abs(v[4] - 1) < 1e-5)
+    #expect(abs(v[4] - (-1)) < 1e-5)
     #expect(abs(v[5] - 0) < 1e-5)
 }
 
