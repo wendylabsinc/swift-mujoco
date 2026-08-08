@@ -68,6 +68,23 @@ import Testing
     #expect(abs(Double(imu.accelerometer[2])) > 5.0)
 }
 
+@Test func validlyStampedLowCmdPassesTheCRCCheck() throws {
+    let joints = [JointTarget](repeating: JointTarget(position: 0, kp: 60, kd: 2), count: 12)
+    let cmd = Go2Adapter().lowCmd(from: RobotCommand(stamp: RobotTime(nanoseconds: 0), joints: joints))
+    #expect(Go2Simulator.hasValidCRC(cmd))
+}
+
+@Test func corruptedCRCFailsTheCheckApplyLowCmdWouldTrapOn() throws {
+    let joints = [JointTarget](repeating: JointTarget(position: 0, kp: 60, kd: 2), count: 12)
+    var cmd = Go2Adapter().lowCmd(from: RobotCommand(stamp: RobotTime(nanoseconds: 0), joints: joints))
+    // Simulate a drifted/corrupted wire message: the CRC no longer matches
+    // the payload. `applyLowCmd` traps on this via `preconditionFailure`,
+    // which `Testing` cannot catch, so the trappable check is exercised here
+    // as the boolean predicate `applyLowCmd` itself calls at its call site.
+    cmd.crc ^= 0xFFFF_FFFF
+    #expect(!Go2Simulator.hasValidCRC(cmd))
+}
+
 @Test func footContactsRegisterOnceTheBodySettles() throws {
     let sim = try Go2Simulator(modelXML: QuadrupedFixture.xml)
     sim.reset()

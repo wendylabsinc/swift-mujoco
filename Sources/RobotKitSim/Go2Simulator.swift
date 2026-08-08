@@ -82,10 +82,32 @@ public final class Go2Simulator {
         mjForward(model, data)
     }
 
+    /// True when `cmd.crc` matches the checksum firmware would compute for it.
+    ///
+    /// Exposed as a boolean predicate — rather than inlined straight into
+    /// `applyLowCmd`'s `preconditionFailure` — so a deliberately corrupted CRC
+    /// can be exercised directly in a test without needing to trap a
+    /// `preconditionFailure`, which the `Testing` framework cannot catch.
+    static func hasValidCRC(_ cmd: LowCmd) -> Bool {
+        cmd.crc == UnitreeCRC.crc(for: cmd)
+    }
+
     /// Evaluates the PD law for every commanded joint and stores the resulting
     /// torques in `ctrl`. Called once per control tick; the torque then holds
     /// across the intervening physics steps, as it does on real hardware.
+    ///
+    /// A real Go2 silently drops a `LowCmd` whose CRC doesn't match. This
+    /// simulator stands in for firmware, so it fails loudly instead: a CRC
+    /// mismatch here means `packedLowCmdBytes`' offsets have drifted from the
+    /// firmware's memory layout, exactly the class of bug this parity
+    /// framework exists to catch, and a silent drop would let a loopback run
+    /// print success over a broken wire format.
     public func applyLowCmd(_ cmd: LowCmd) {
+        guard Self.hasValidCRC(cmd) else {
+            preconditionFailure(
+                "LowCmd CRC mismatch: got \(cmd.crc), expected \(UnitreeCRC.crc(for: cmd)) — "
+                    + "command corrupted in transit or packedLowCmdBytes offsets drifted")
+        }
         for c in 0..<Go2Adapter.jointCount {
             let motor = cmd.motorCmd[c]
             let q = data.qpos(at: qposAddressForJoint[c])
@@ -104,6 +126,12 @@ public final class Go2Simulator {
     }
 
     /// Synthesizes the robot's own state message from `mjData`.
+    ///
+    /// `state.crc` is left at its default (0): `UnitreeCRC` only defines the
+    /// `LowCmd` checksum this plan's scope covers (the direction real
+    /// firmware validates), and no `LowState`-flavored CRC function exists
+    /// anywhere in this codebase to call — inventing one here would be an
+    /// unreviewed checksum scheme, not a documented Unitree contract.
     public func lowState() -> LowState {
         var state = LowState()
         for c in 0..<Go2Adapter.jointCount {
