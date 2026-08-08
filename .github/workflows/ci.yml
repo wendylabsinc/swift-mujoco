@@ -47,6 +47,17 @@ jobs:
           sudo apt-get install -y libegl1 libegl-mesa0 libgl1 libglx-mesa0 libgl1-mesa-dri libopengl0
           PYTHON="$PWD/.venv-mujoco/bin/python" bash Scripts/install-mujoco.sh
 
+      - name: Install CycloneDDS for swift-ros2
+        run: |
+          set -euxo pipefail
+          if ! sudo apt-get install -y libcyclonedds-dev; then
+            git clone --depth 1 --branch 0.10.5 https://github.com/eclipse-cyclonedds/cyclonedds /tmp/cyclonedds
+            cmake -S /tmp/cyclonedds -B /tmp/cyclonedds/build \
+              -DENABLE_SHM=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DDSPERF=OFF
+            sudo cmake --build /tmp/cyclonedds/build --target install
+            sudo ldconfig
+          fi
+
       - name: Build
         env:
           PKG_CONFIG_PATH: /home/runner/.local/lib/pkgconfig

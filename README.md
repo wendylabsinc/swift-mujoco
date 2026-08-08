@@ -38,8 +38,13 @@ declared platform floor to satisfy every dependency's minimum, so
   only (MLX is Metal-backed); the target and its `mlx-swift` dependency are
   gated behind `#if os(macOS)` in `Package.swift` so Linux CI never sees
   them.
-- `RobotKit` — shared RL plumbing (`Environment` protocol, rollout
-  collection, run-mode signaling) used by both the cartpole and Go2 demos.
+- `RobotKit` — sim-to-real framework: canonical robot state/command types, the
+  observation encoder and action decoder that define the sim-to-real contract,
+  transports, and the control loop; also hosts the shared RL plumbing
+  (`Environment` protocol, rollout collection, run-mode signaling) used by the
+  cartpole and Go2 RL demos. `RobotKitGo2` adds Unitree Go2 messages, CRC, and
+  the adapter; `RobotKitSim` drives a MuJoCo Go2 that speaks the robot's own
+  wire messages; `RobotKitROS2` provides the DDS transport.
 - `Go2Kit` — `Go2Environment`, a MuJoCo-backed Unitree Go2 quadruped driven
   by a joint-space PD controller, loading the real `unitree_go2` model via
   `WendyMuJoCo.Menagerie`. macOS only, same reason as `MLXPolicyTraining`
@@ -240,3 +245,24 @@ WorldSim HTTP router itself (it has no `WorldSimServerCore` dependency at
 all) — to actually watch it in the Sim tab you need a separately running
 `wendy-worldsim-server` (`swift run wendy-worldsim-server`, or the
 `xcodebuild`-built equivalent) serving those slot files.
+
+## Sim-to-real demo (Go2)
+
+    # one-time: fetch the Go2 model
+    git clone --depth 1 --filter=blob:none --sparse \
+      https://github.com/google-deepmind/mujoco_menagerie .cache/mujoco_menagerie
+    git -C .cache/mujoco_menagerie sparse-checkout add unitree_go2
+
+    swift run go2-demo --mode sim        # in-process, no serialization
+    swift run go2-demo --mode loopback   # same code over real DDS
+
+Both modes run the identical controller, encoder, decoder, and adapter. In
+`loopback` the simulator publishes genuine `unitree_go/LowState` on `/lowstate`
+and consumes `/lowcmd`, so the vendor-message path that will face hardware —
+CDR serialization, the Unitree CRC, and the FR/FL/RR/RL leg-order remap — is
+exercised without a robot.
+
+Note the two joint orders in play: MuJoCo's Menagerie model declares legs
+FL, FR, RL, RR, while Unitree firmware indexes motors FR, FL, RR, RL.
+`RobotKit`'s canonical order is the firmware's, and `Go2JointMap` is the single
+place the two are reconciled.

@@ -45,7 +45,10 @@ var targets: [Target] = [
     ]),
     .testTarget(name: "RobotKitGo2Tests", dependencies: ["RobotKitGo2", "RobotKit"]),
     .target(name: "RobotKitSim", dependencies: ["RobotKit", "RobotKitGo2", "MuJoCo"]),
-    .testTarget(name: "RobotKitSimTests", dependencies: ["RobotKitSim", "RobotKitGo2", "RobotKit", "MuJoCo"]),
+    .testTarget(name: "RobotKitSimTests", dependencies: [
+        "RobotKitSim", "RobotKitGo2", "RobotKit", "MuJoCo",
+        .product(name: "SwiftROS2", package: "swift-ros2"),
+    ]),
     .target(name: "RobotKitROS2", dependencies: [
         "RobotKit",
         .product(name: "SwiftROS2", package: "swift-ros2"),
@@ -93,6 +96,10 @@ var targets: [Target] = [
                       .product(name: "Hummingbird", package: "hummingbird")],
         path: "Sources/go2-live-demo"
     ),
+    .executableTarget(
+        name: "Go2Demo",
+        dependencies: ["RobotKit", "RobotKitGo2", "RobotKitSim", "RobotKitROS2"],
+        path: "Sources/go2-demo"),
 ]
 
 var products: [Product] = [
@@ -105,6 +112,7 @@ var products: [Product] = [
     .executable(name: "go2-scene-demo", targets: ["Go2SceneDemo"]),
     .executable(name: "go2-live-demo", targets: ["Go2LiveDemo"]),
     .library(name: "RobotKit", targets: ["RobotKit"]),
+    .executable(name: "go2-demo", targets: ["Go2Demo"]),
 ]
 
 var dependencies: [Package.Dependency] = [
