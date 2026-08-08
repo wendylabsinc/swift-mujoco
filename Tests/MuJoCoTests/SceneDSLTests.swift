@@ -54,7 +54,7 @@ import Testing
 }
 
 @Test func bodyWithNoTrailingClosureHasNoChildren() throws {
-    // Exercises Body's default `children: () -> [MjSceneElement] = { }` —
+    // Exercises Body's default `children: () -> [MjSceneElement] = { [] }` —
     // a childless body (e.g. a bare attachment point).
     let scene = Scene {
         Geom(type: .plane, size: [5, 5, 0.1])

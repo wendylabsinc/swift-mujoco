@@ -247,7 +247,18 @@ git commit -m "feat: add Scene/Geom scene DSL core (MjSceneElement, MjSpecBody, 
 
 **Interfaces:**
 - Consumes (from Task 1): `MjSceneElement`, `MjSpecBody(ptr:)` (internal init, same module), `MjSceneBuilder`, `Scene`, `Geom`. `MjModel.id(of:name:)`, `objBody`/`objGeom` (`Sources/MuJoCo/MjModel.swift`). `MjData(_:)` init, `mjForward(_:_:)`, `MjData.bodyPos(_:) -> Vec3` (`Sources/MuJoCo/MjBodies.swift`). `Vec3(_:_:_:)`, `Equatable`.
-- Produces: `public struct Body: MjSceneElement { public init(name: String? = nil, pos: [Double] = [0,0,0], quat: [Double]? = nil, @MjSceneBuilder children: () -> [MjSceneElement] = { }) }`; `public struct FreeJoint: MjSceneElement { public init(name: String? = nil) }`.
+- Produces: `public struct Body: MjSceneElement { public init(name: String? = nil, pos: [Double] = [0,0,0], quat: [Double]? = nil, @MjSceneBuilder children: () -> [MjSceneElement] = { [] }) }`; `public struct FreeJoint: MjSceneElement { public init(name: String? = nil) }`.
+
+  Post-implementation correction: an earlier draft of this plan said `= { }`
+  and claimed `{ [] }` would fail to type-check — backwards. The
+  `@resultBuilder` transform doesn't apply to a default *parameter value*
+  closure (only to one passed at a call site), so `{ }` there is an
+  ordinary empty closure inferring as `() -> Void` (a type mismatch against
+  `() -> [MjSceneElement]`), while `{ [] }` is an ordinary closure
+  returning the array `[]` directly — no builder methods involved, and it
+  type-checks fine. Confirmed via an isolated repro during the final
+  whole-branch review's fix round. See the design doc's `Body` entry for
+  the full explanation.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -275,7 +286,7 @@ Append to `Tests/MuJoCoTests/SceneDSLTests.swift`:
 }
 
 @Test func bodyWithNoTrailingClosureHasNoChildren() throws {
-    // Exercises Body's default `children: () -> [MjSceneElement] = { }` —
+    // Exercises Body's default `children: () -> [MjSceneElement] = { [] }` —
     // a childless body (e.g. a bare attachment point).
     let scene = Scene {
         Geom(type: .plane, size: [5, 5, 0.1])
@@ -326,7 +337,7 @@ public struct Body: MjSceneElement {
     public let children: [MjSceneElement]
 
     public init(name: String? = nil, pos: [Double] = [0, 0, 0], quat: [Double]? = nil,
-                @MjSceneBuilder children: () -> [MjSceneElement] = { }) {
+                @MjSceneBuilder children: () -> [MjSceneElement] = { [] }) {
         self.name = name
         self.pos = pos
         self.quat = quat
