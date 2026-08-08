@@ -77,6 +77,17 @@ var targets: [Target] = [
                       .product(name: "Hummingbird", package: "hummingbird")],
         path: "Sources/mujoco-live-demo"
     ),
+    .executableTarget(
+        name: "Go2SceneDemo",
+        dependencies: ["MuJoCo", "WendyMuJoCo"],
+        path: "Sources/go2-scene-demo"
+    ),
+    .executableTarget(
+        name: "Go2LiveDemo",
+        dependencies: ["MuJoCo", "WendyMuJoCo", "WorldSimServerCore",
+                      .product(name: "Hummingbird", package: "hummingbird")],
+        path: "Sources/go2-live-demo"
+    ),
 ]
 
 var products: [Product] = [
@@ -86,6 +97,8 @@ var products: [Product] = [
     .library(name: "WorldSimServerCore", targets: ["WorldSimServerCore"]),
     .executable(name: "wendy-worldsim-server", targets: ["WendyWorldSimServer"]),
     .executable(name: "mujoco-live-demo", targets: ["MujocoLiveDemo"]),
+    .executable(name: "go2-scene-demo", targets: ["Go2SceneDemo"]),
+    .executable(name: "go2-live-demo", targets: ["Go2LiveDemo"]),
     .library(name: "RobotKit", targets: ["RobotKit"]),
 ]
 
