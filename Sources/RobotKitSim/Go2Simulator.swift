@@ -177,5 +177,15 @@ public final class Go2Simulator {
         mjForward(model, data)
     }
 
+    /// Reads a joint's qpos by MuJoCo's own declaration-order index, bypassing
+    /// `qposAddressForJoint` entirely. Unlike `lowState()`, which reads back
+    /// through the very canonical-order array a permutation bug would live
+    /// in, this gives a test an independent ground truth: MuJoCo's tree order
+    /// is fixed by the model XML, not by anything `Go2JointMap` computes.
+    func jointPositionForTesting(mujocoIndex: Int) -> Double {
+        let joints = model.joints
+        return data.qpos(at: joints[mujocoIndex + 1].qposadr)  // +1 skips the free joint
+    }
+
     func appliedTorquesForTesting() -> [Double] { lastTorques }
 }
